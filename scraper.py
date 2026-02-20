@@ -18,7 +18,7 @@ class TikTokScraper:
         """
         self.token = api_token or os.getenv('APIFY_API_TOKEN')
         if not self.token:
-            print("⚠️ No Apify API token provided. Scraper will fail unless token is passed.")
+            print("[WARN] No Apify API token provided. Scraper will fail unless token is passed.")
             self.client = None
         else:
             self.client = ApifyClient(self.token)
@@ -100,10 +100,10 @@ class TikTokScraper:
     async def _run_actor(self, run_input, limit=None, since_date=None, comments_per_video=0):
         """Generic actor runner with limits"""
         if not self.client:
-            print("❌ Apify Client not initialized. Missing API Token.")
+            print("[ERROR] Apify Client not initialized. Missing API Token.")
             return []
         
-        print(f"🚀 Starting Apify Actor: {self.actor_id} with input: {run_input}")
+        print(f"[INFO] Starting Apify Actor: {self.actor_id} with input: {run_input}")
         
         results = []
         try:
@@ -113,7 +113,7 @@ class TikTokScraper:
             if not dataset_id:
                 return []
             
-            print(f"✅ Run finished. Fetching results from dataset {dataset_id}...")
+            print(f"[INFO] Run finished. Fetching results from dataset {dataset_id}...")
             
             dataset_items = self.client.dataset(dataset_id).iterate_items()
             
@@ -138,7 +138,7 @@ class TikTokScraper:
             return results
             
         except Exception as e:
-            print(f"❌ Error running Apify actor: {e}")
+            print(f"[ERROR] Error running Apify actor: {e}")
             return []
 
     async def scrape_hashtag(self, hashtags, count=None, since_date=None, comments_per_video=0):
