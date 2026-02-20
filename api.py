@@ -275,6 +275,5 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8001)
 
-# Vercel handler
-from vercel import serve
-app = serve(app)
+# Vercel ASGI handler - export the app
+handler = app

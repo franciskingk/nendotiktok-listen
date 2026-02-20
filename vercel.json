@@ -5,23 +5,12 @@
       "src": "api.py",
       "use": "@vercel/python",
       "runtime": "python3.11"
-    },
-    {
-      "src": "frontend/dist",
-      "use": "@vercel/static"
     }
   ],
   "routes": [
     {
       "src": "/api/(.*)",
       "dest": "/api.py"
-    },
-    {
-      "handle": "filesystem"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/frontend/dist/index.html"
     }
   ]
 }
