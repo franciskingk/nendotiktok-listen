@@ -61,16 +61,39 @@ def save_local_data(data):
         json.dump(existing, f)
 
 def load_config():
+    config = {"sheet_url": "", "apify_token": "", "groups": []}
+    
+    # 1. Load from config.json if it exists
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, "r") as f:
-                config = json.load(f)
-                if "groups" not in config:
-                    config["groups"] = []
-                return config
-        except:
-            pass
-    return {"sheet_url": "", "apify_token": "", "groups": []}
+                file_config = json.load(f)
+                config.update(file_config)
+        except Exception as e:
+            print(f"Error loading {CONFIG_FILE}: {e}")
+
+    # 2. Override/Populate with Environment Variables
+    env_sheet_url = os.environ.get("SHEET_URL")
+    if env_sheet_url:
+        config["sheet_url"] = env_sheet_url
+
+    env_apify_token = os.environ.get("APIFY_TOKEN")
+    if env_apify_token:
+        config["apify_token"] = env_apify_token
+
+    env_groups = os.environ.get("GROUPS")
+    if env_groups:
+        try:
+            # Parse GROUPS from JSON string if provided in env
+            config["groups"] = json.loads(env_groups)
+        except Exception as e:
+            print(f"Error parsing GROUPS from environment: {e}")
+
+    # Ensure groups key always exists as a list
+    if "groups" not in config or not isinstance(config["groups"], list):
+        config["groups"] = []
+        
+    return config
 
 def save_config(config):
     with open(CONFIG_FILE, "w") as f:
