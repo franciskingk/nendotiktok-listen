@@ -94,28 +94,30 @@ class TikTokAnalyzer:
         except:
             return {'compound': 0, 'sentiment': 'neutral'}
     
-    def add_sentiment_analysis(self, df, method='vader'):
+    def add_sentiment_analysis(self, df, method='vader', text_column='caption'):
         """
         Add sentiment analysis to DataFrame
         
         Args:
-            df: DataFrame with caption column
+            df: DataFrame with text column
             method: 'vader' or 'textblob'
+            text_column: Name of column containing text to analyze
             
         Returns:
             DataFrame with sentiment columns added
         """
-        if df.empty or 'caption' not in df.columns:
+        if df.empty or text_column not in df.columns:
             return df
         
         df = df.copy()
         
         if method == 'vader':
-            sentiments = df['caption'].apply(self.analyze_sentiment_vader)
+            sentiments = df[text_column].apply(self.analyze_sentiment_vader)
+            df['sentiment_score'] = sentiments.apply(lambda x: x['compound'])
             df['sentiment_score'] = sentiments.apply(lambda x: x['compound'])
             df['sentiment'] = sentiments.apply(lambda x: x['sentiment'])
         else:
-            sentiments = df['caption'].apply(self.analyze_sentiment_textblob)
+            sentiments = df[text_column].apply(self.analyze_sentiment_textblob)
             df['sentiment_score'] = sentiments.apply(lambda x: x['polarity'])
             df['sentiment'] = sentiments.apply(lambda x: x['sentiment'])
         
@@ -195,8 +197,12 @@ class TikTokAnalyzer:
             'views': 'sum',
             'likes': 'sum',
             'comments': 'sum',
-            'shares': 'sum'
+            'shares': 'sum',
+            'saves': 'sum' if 'saves' in df_time.columns else 'max' # max is a safe fallback if column missing
         }).rename(columns={'video_id': 'video_count'})
+        
+        if 'saves' not in df_time.columns:
+            aggregated = aggregated.drop(columns=['saves'], errors='ignore')
         
         return aggregated.reset_index()
     

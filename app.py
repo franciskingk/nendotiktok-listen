@@ -24,34 +24,17 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for modern styling
+# Standard Streamlit styling (Plain)
 st.markdown("""
 <style>
     .main-header {
         font-size: 2.5rem;
         font-weight: 700;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
         margin-bottom: 0.5rem;
-    }
-    .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 1.5rem;
-        border-radius: 10px;
-        color: white;
-        text-align: center;
-    }
-    .stButton>button {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
-        border-radius: 8px;
-        padding: 0.5rem 2rem;
-        font-weight: 600;
     }
 </style>
 """, unsafe_allow_html=True)
+
 
 
 # Initialize session state
@@ -59,6 +42,10 @@ if 'data_loaded' not in st.session_state:
     st.session_state.data_loaded = False
 if 'df' not in st.session_state:
     st.session_state.df = pd.DataFrame()
+if 'df_comments' not in st.session_state:
+    st.session_state.df_comments = pd.DataFrame()
+if 'df_comments_filtered' not in st.session_state:
+    st.session_state.df_comments_filtered = pd.DataFrame()
 
 
 @st.cache_resource
@@ -96,13 +83,21 @@ def create_wordcloud(text_data):
     return fig
 
 
-def main():
-    # Header
-    st.markdown('<h1 class="main-header">📊 TikTok Social Listening Dashboard</h1>', unsafe_allow_html=True)
+
+ def main():
+     # Header
+     st.markdown('<h1 class="main-header">📊 TikTok Social Listening Dashboard</h1>', unsafe_allow_html=True)
     st.markdown("Track hashtags, analyze sentiment, and discover insights from TikTok content")
     
     # Sidebar
     st.sidebar.title("🎯 Filters & Controls")
+    
+    # Connection Status
+    if not os.path.exists("credentials.json"):
+        st.sidebar.error("❌ Google Sheets: Disconnected")
+        st.sidebar.caption("Missing `credentials.json`. Data will be temporary.")
+    else:
+        st.sidebar.success("✅ Google Sheets: File Found")
     
     # Scraping controls
     st.sidebar.header("Data Collection")
@@ -138,14 +133,12 @@ def main():
     else:
         video_count = st.sidebar.number_input("Max videos to scrape", min_value=10, max_value=10000, value=50, step=10)
     
-    # Comments Scraping (Only for Username mode usually, but code supports others if needed)
-    scrape_comments = False
+    # Comments Scraping (Now for all modes)
+    st.sidebar.subheader("💬 Comments")
+    scrape_comments = st.sidebar.checkbox("Scrape Comments for each video")
     comments_limit = 0
-    if scrape_type == "Username":
-        st.sidebar.subheader("💬 Comments")
-        scrape_comments = st.sidebar.checkbox("Scrape Comments for each video")
-        if scrape_comments:
-            comments_limit = st.sidebar.number_input("Max comments per video", min_value=10, max_value=2000, value=50)
+    if scrape_comments:
+        comments_limit = st.sidebar.number_input("Max comments per video", min_value=10, max_value=2000, value=50)
     
     if st.sidebar.button("🔄 Scrape New Data", use_container_width=True):
         if not apify_token:
@@ -156,13 +149,13 @@ def main():
                     # Determine scraper function
                     results = []
                     if scrape_type == "Hashtag":
-                        results = scrape_hashtag_sync(search_input, video_count, since_date, apify_token)
+                        results = scrape_hashtag_sync(search_input, video_count, since_date, apify_token, comments_limit if scrape_comments else 0)
                     elif scrape_type == "Username":
                         # Pass comment limits
                         results = scrape_user_sync(search_input, video_count, since_date, apify_token, comments_limit if scrape_comments else 0)
                     else:
                         from scraper import scrape_search_sync
-                        results = scrape_search_sync(search_input, video_count, since_date, apify_token)
+                        results = scrape_search_sync(search_input, video_count, since_date, apify_token, comments_limit if scrape_comments else 0)
                     
                     if results:
                         # Extract comments if any
@@ -191,11 +184,28 @@ def main():
                             else:
                                 st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame(results)], ignore_index=True)
                         
-                        if sheets.worksheet:
-                             st.session_state.data_loaded = False 
+                        # Update session state immediately so UI refreshes without manual load
+                        new_df = pd.DataFrame(results)
+                        analyzer = get_analyzer()
+                        new_df = analyzer.calculate_engagement_rate(new_df)
+                        new_df = analyzer.add_sentiment_analysis(new_df, method='vader')
+                        
+                        if st.session_state.df.empty:
+                            st.session_state.df = new_df
                         else:
-                             st.session_state.data_loaded = True
-                             
+                            st.session_state.df = pd.concat([st.session_state.df, new_df], ignore_index=True).drop_duplicates('video_id')
+                        
+                        if all_comments:
+                            new_c_df = pd.DataFrame(all_comments)
+                            new_c_df = analyzer.add_sentiment_analysis(new_c_df, method='vader', text_column='text')
+                            if st.session_state.df_comments.empty:
+                                st.session_state.df_comments = new_c_df
+                            else:
+                                st.session_state.df_comments = pd.concat([st.session_state.df_comments, new_c_df], ignore_index=True).drop_duplicates('comment_id')
+                            st.session_state.df_comments_filtered = st.session_state.df_comments
+                        
+                        st.session_state.data_loaded = True
+                        
                     else:
                         st.sidebar.error("No data found or Apify run failed. Check your token and credits.")
                         
@@ -219,8 +229,16 @@ def main():
                 df = analyzer.add_sentiment_analysis(df, method='vader')
                 
                 st.session_state.df = df
+                
+                # Load comments
+                df_comments = sheets.get_all_comments()
+                if not df_comments.empty:
+                    df_comments = analyzer.add_sentiment_analysis(df_comments, method='vader', text_column='text')
+                st.session_state.df_comments = df_comments
+                st.session_state.df_comments_filtered = df_comments # Initialize
+                
                 st.session_state.data_loaded = True
-                st.sidebar.success(f"✅ Loaded {len(df)} videos")
+                st.sidebar.success(f"✅ Loaded {len(df)} videos and {len(df_comments)} comments")
             else:
                 st.sidebar.warning("No data found in Google Sheets")
     
@@ -251,6 +269,17 @@ def main():
             if len(date_range) == 2:
                 mask = (df['publish_date'].dt.date >= date_range[0]) & (df['publish_date'].dt.date <= date_range[1])
                 df = df[mask]
+                
+                # Also filter comments if they exist
+                if not st.session_state.df_comments.empty:
+                    df_c = st.session_state.df_comments
+                    if 'date' in df_c.columns:
+                        mask_c = (df_c['date'].dt.date >= date_range[0]) & (df_c['date'].dt.date <= date_range[1])
+                        st.session_state.df_comments_filtered = df_c[mask_c]
+                    else:
+                        st.session_state.df_comments_filtered = df_c
+                else:
+                    st.session_state.df_comments_filtered = pd.DataFrame()
     
     # Main content
     if st.session_state.data_loaded and not st.session_state.df.empty:
@@ -267,7 +296,7 @@ def main():
         st.session_state.df = df
         
         # Key metrics
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3, col4, col5 = st.columns(5)
         
         with col1:
             st.metric("Total Videos", f"{len(df):,}")
@@ -276,11 +305,26 @@ def main():
         with col3:
             st.metric("Total Likes", f"{df['likes'].sum():,.0f}")
         with col4:
+            st.metric("Total Shares", f"{df['shares'].sum():,.0f}")
+        with col5:
+            # Check if saves exist in the dataset
+            saves_sum = df['saves'].sum() if 'saves' in df.columns else 0
+            st.metric("Total Saves", f"{saves_sum:,.0f}")
+        
+        # New row for averages
+        acol1, acol2, acol3 = st.columns(3)
+        with acol1:
             st.metric("Avg Engagement", f"{df['engagement_rate'].mean():.2f}%")
+        with acol2:
+            st.metric("Total Comments", f"{df['comments'].sum():,.0f}")
+        with acol3:
+            # Comment data count
+            c_count = len(st.session_state.df_comments_filtered) if not st.session_state.df_comments_filtered.empty else 0
+            st.metric("Scraped Comments", f"{c_count:,}")
         
         st.divider()
         
-        # Modern UI: Top Content Gallery
+        # Top Content Gallery
         st.subheader("🔥 Top Trending Videos")
         top_videos = df.sort_values('views', ascending=False).head(4)
         
@@ -295,19 +339,11 @@ def main():
                 # Metric Badge
                 st.markdown(f"""
                 <div style="background: rgba(255,255,255,0.1); padding: 5px; border-radius: 5px; font-size: 0.8em; margin-bottom: 5px;">
-                    👁️ {row['views']:,} | ❤️ {row['likes']:,} | 💬 {row['comments']:,}
+                    👁️ {row['views']:,} | ❤️ {row['likes']:,} | 💬 {row['comments']:,} | Mood: {row['sentiment']}
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # Video Embed
-                # TikTok URLs often don't permit direct generic iframe embedding without oEmbed, 
-                # but st.video works if the platform supports it or if we have a direct link.
-                # Standard TikTok web URLs might not play directly in st.video depending on browser/region.
-                # Fallback: Playable link button
-                try:
-                   st.video(row['video_url'])
-                except:
-                   st.markdown(f"[🎥 Watch Video]({row['video_url']})")
+                st.markdown(f"[🎥 Watch Video]({row['video_url']})")
 
         st.divider()
 
@@ -336,15 +372,35 @@ def main():
             fig.update_layout(
                 plot_bgcolor='rgba(0,0,0,0)',
                 paper_bgcolor='rgba(0,0,0,0)',
-                font_color='white',
                 xaxis=dict(showgrid=False, title="Publish Date"),
-                yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)', title="Views"),
+                yaxis=dict(showgrid=True, title="Views"),
                 hovermode='closest'
             )
             st.plotly_chart(fig, use_container_width=True)
             
         with col2:
-            st.subheader("⚡ Engagement Breakdown")
+            st.subheader("🎯 Sentiment Distribution")
+            sentiment_counts = df['sentiment'].value_counts().reset_index()
+            sentiment_counts.columns = ['sentiment', 'count']
+            
+            fig_pie = px.pie(
+                sentiment_counts, 
+                values='count', 
+                names='sentiment',
+                color='sentiment',
+                color_discrete_map={'positive': '#00CC96', 'neutral': '#AB63FA', 'negative': '#EF553B'},
+                hole=0.4
+            )
+            fig_pie.update_layout(
+                paper_bgcolor='rgba(0,0,0,0)',
+                legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5)
+            )
+            st.plotly_chart(fig_pie, use_container_width=True)
+
+
+        st.subheader("⚡ Engagement Breakdown")
+        col1, col2 = st.columns([2, 1])
+        with col1:
             # Stacked Bar of interactions
             time_agg = analyzer.aggregate_by_time(df, freq='D')
             if not time_agg.empty:
@@ -353,14 +409,20 @@ def main():
                     go.Bar(name='Comments', x=time_agg['publish_date'], y=time_agg['comments'], marker_color='#764ba2'),
                     go.Bar(name='Shares', x=time_agg['publish_date'], y=time_agg['shares'], marker_color='#f093fb')
                 ])
+                if 'saves' in time_agg.columns:
+                     fig_bar.add_trace(go.Bar(name='Saves', x=time_agg['publish_date'], y=time_agg['saves'], marker_color='#ffcc00'))
+
                 fig_bar.update_layout(
                     barmode='stack',
                     plot_bgcolor='rgba(0,0,0,0)',
                     paper_bgcolor='rgba(0,0,0,0)',
-                    font_color='white',
                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
                 )
                 st.plotly_chart(fig_bar, use_container_width=True)
+        
+        with col2:
+             # Additional stats or info
+             st.info("The chart on the left shows daily engagement totals. You can hover over bars to see breakdown by type.")
 
         # Word cloud & Authors
         col1, col2 = st.columns(2)
@@ -425,6 +487,81 @@ def main():
             hide_index=True,
             use_container_width=True
         )
+
+        # COMMENTS SECTION
+        st.divider()
+        st.header("💬 Detailed Comment Analysis")
+        
+        df_c = st.session_state.df_comments_filtered
+        
+        if not df_c.empty:
+            ccol1, ccol2 = st.columns([1, 2])
+            
+            with ccol1:
+                st.subheader("Comment Sentiment")
+                c_sentiment_counts = df_c['sentiment'].value_counts().reset_index()
+                c_sentiment_counts.columns = ['sentiment', 'count']
+                
+                fig_c_pie = px.pie(
+                    c_sentiment_counts,
+                    values='count',
+                    names='sentiment',
+                    color='sentiment',
+                    color_discrete_map={'positive': '#00CC96', 'neutral': '#AB63FA', 'negative': '#EF553B'},
+                    hole=0.4
+                )
+                fig_c_pie.update_layout(
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    font_color='white',
+                    showlegend=True,
+                    legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5)
+                )
+                st.plotly_chart(fig_c_pie, use_container_width=True)
+                
+                # Sentiment Score Distribution
+                fig_c_hist = px.histogram(
+                    df_c, 
+                    x='sentiment_score',
+                    nbins=20,
+                    color_discrete_sequence=['#764ba2'],
+                    title="Comment Sentiment Score Distribution"
+                )
+                fig_c_hist.update_layout(paper_bgcolor='rgba(0,0,0,0)', font_color='white')
+                st.plotly_chart(fig_c_hist, use_container_width=True)
+            
+            with ccol2:
+                st.subheader("Trending Comment Keywords")
+                comment_text = ' '.join(df_c['text'].dropna().astype(str))
+                if comment_text:
+                    c_wordcloud = create_wordcloud(comment_text)
+                    if c_wordcloud:
+                        st.pyplot(c_wordcloud, use_container_width=True)
+                
+                st.subheader("Top Liked Comments")
+                top_comments = df_c.sort_values('likes', ascending=False).head(10)
+                st.dataframe(
+                    top_comments[['author', 'text', 'likes', 'date', 'sentiment']],
+                    column_config={
+                        "date": st.column_config.DatetimeColumn("Date", format="D MMM, HH:mm"),
+                        "likes": st.column_config.NumberColumn("Likes", format="%d ❤️"),
+                        "sentiment": st.column_config.TextColumn("Sentiment")
+                    },
+                    hide_index=True,
+                    use_container_width=True
+                )
+            
+            st.subheader("Raw Comment Feed")
+            st.dataframe(
+                df_c[['date', 'author', 'text', 'likes', 'sentiment', 'video_id']],
+                column_config={
+                    "date": st.column_config.DatetimeColumn("Date", format="D MMM YY, HH:mm"),
+                    "video_id": st.column_config.TextColumn("Video ID")
+                },
+                hide_index=True,
+                use_container_width=True
+            )
+        else:
+            st.info("No comment data available for the selected period. Ensure you scrape with 'Scrape Comments' enabled.")
         
     else:
         # Welcome screen

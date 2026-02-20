@@ -5,6 +5,7 @@ from apify_client import ApifyClient
 import asyncio
 from datetime import datetime
 import os
+import re
 
 
 class TikTokScraper:
@@ -32,105 +33,14 @@ class TikTokScraper:
         return True if self.client else False
     
     def extract_hashtags(self, caption):
-        """Helper (often redundant if API returns tags, but useful for consistency)"""
-        import re
+        """Helper to extract hashtags from caption"""
         if not caption: return ""
         return ', '.join(re.findall(r'#(\w+)', caption))
 
     def extract_mentions(self, caption):
-        """Helper"""
-        import re
+        """Helper to extract mentions from caption"""
         if not caption: return ""
         return ', '.join(re.findall(r'@(\w+)', caption))
-
-    def _map_result(self, item):
-        """Map Apify result to our app's data structure"""
-        try:
-            # Apify structure varies, usually: 
-            # item['text'] -> caption
-            # item['authorMeta']['name'] -> author
-            # item['diggCount'] -> likes
-            # item['playCount'] -> views
-            
-            # Robust extraction with defaults
-            video_date = datetime.now() # Fallback
-            if 'createTime' in item:
-                try: 
-                    video_date = datetime.fromtimestamp(item['createTime'])
-                except: pass
-            elif 'createTimeISO' in item:
-                try:
-                    video_date = datetime.fromisoformat(item['createTimeISO'].replace('Z', '+00:00'))
-                except: pass
-
-            return {
-                'video_id': item.get('id', item.get('videoMeta', {}).get('id', '')),
-                'video_url': item.get('webVideoUrl', ''),
-                'caption': item.get('text', ''),
-                'author': item.get('authorMeta', {}).get('name', ''),
-                'likes': item.get('diggCount', 0),
-                'comments': item.get('commentCount', 0),
-                'shares': item.get('shareCount', 0),
-                'views': item.get('playCount', 0),
-                'publish_date': video_date.strftime('%Y-%m-%d %H:%M:%S'),
-                'hashtags': ', '.join([t.get('name', '') for t in item.get('hashtags', [])]) or self.extract_hashtags(item.get('text','')),
-                'mentions': self.extract_mentions(item.get('text', ''))
-            }
-        except Exception as e:
-            print(f"Error mapping item: {e}")
-            return None
-
-    async def _run_actor(self, run_input, limit=None, since_date=None):
-        """Generic actor runner with limits"""
-        if not self.client:
-            print("❌ Apify Client not initialized. Missing API Token.")
-            return []
-        
-        print(f"🚀 Starting Apify Actor: {self.actor_id} with input: {run_input}")
-        
-        results = []
-        try:
-            # Run the actor
-            # Note: For strict limit, we pass 'resultsPerPage' or 'limit' to actor if supported,
-            # but usually we handle it by fetching dataset.
-            # clockworks/tiktok-scraper supports 'resultsPerPage' which acts as a limit per keyword.
-            
-            # Start the run
-            run = self.client.actor(self.actor_id).call(run_input=run_input)
-            
-            dataset_id = run.get('defaultDatasetId')
-            if not dataset_id:
-                return []
-            
-            print(f"✅ Run finished. Fetching results from dataset {dataset_id}...")
-            
-            # Iterate through dataset items
-            # Apify client allows iterating dataset items
-            dataset_items = self.client.dataset(dataset_id).iterate_items()
-            
-            count = 0
-            for item in dataset_items:
-                mapped = self._map_result(item)
-                if not mapped: continue
-                
-                # Check limits
-                # Date check
-                if since_date:
-                    item_date = datetime.strptime(mapped['publish_date'], '%Y-%m-%d %H:%M:%S')
-                    if item_date < since_date:
-                        continue # Skip old items (or break if chronological, but actor isn't guaranteed)
-                
-                results.append(mapped)
-                count += 1
-                
-                if limit and count >= limit:
-                    break
-            
-            return results
-            
-        except Exception as e:
-            print(f"❌ Error running Apify actor: {e}")
-            return []
 
     def _map_result(self, item, extract_comments=False):
         """Map Apify result to our app's data structure"""
@@ -152,10 +62,12 @@ class TikTokScraper:
                 'likes': item.get('diggCount', 0),
                 'comments': item.get('commentCount', 0),
                 'shares': item.get('shareCount', 0),
+                'saves': item.get('collectCount', 0),
                 'views': item.get('playCount', 0),
                 'publish_date': video_date.strftime('%Y-%m-%d %H:%M:%S'),
-                'hashtags': ', '.join([t.get('name', '') for t in item.get('hashtags', [])]) or self.extract_hashtags(item.get('text','')),
-                'mentions': self.extract_mentions(item.get('text', ''))
+                'hashtags': ', '.join([t.get('name', '') for t in item.get('hashtags', [])]) or self.extract_hashtags(item.get('text', '')),
+                'mentions': self.extract_mentions(item.get('text', '')),
+                'thumbnail_url': item.get('coverUrl', item.get('videoMeta', {}).get('coverUrl', ''))
             }
 
             if extract_comments:
@@ -229,8 +141,7 @@ class TikTokScraper:
             print(f"❌ Error running Apify actor: {e}")
             return []
 
-    async def scrape_hashtag(self, hashtags, count=None, since_date=None):
-        # Handle single string or list
+    async def scrape_hashtag(self, hashtags, count=None, since_date=None, comments_per_video=0):
         if isinstance(hashtags, str):
             hashtags = [h.strip() for h in hashtags.split(',')]
             
@@ -238,9 +149,10 @@ class TikTokScraper:
         run_input = {
             "hashtags": hashtags,
             "resultsPerPage": limit,
-            "shouldDownloadVideos": False
+            "shouldDownloadVideos": False,
+            "commentsPerVideo": comments_per_video
         }
-        return await self._run_actor(run_input, limit, since_date)
+        return await self._run_actor(run_input, limit, since_date, comments_per_video)
 
     async def scrape_user(self, usernames, count=None, since_date=None, comments_per_video=0):
         if isinstance(usernames, str):
@@ -255,31 +167,32 @@ class TikTokScraper:
         }
         return await self._run_actor(run_input, limit, since_date, comments_per_video)
 
-    async def scrape_search(self, queries, count=None, since_date=None):
-        # For 'search', we currently map to hashtags because the actor is limited.
-        # We will process the queries list and clean them for hashtag usage.
+    async def scrape_search(self, queries, count=None, since_date=None, comments_per_video=0):
         if isinstance(queries, str):
             queries = [q.strip() for q in queries.split(',')]
         
-        # Clean queries to be hashtag-friendly (remove spaces)
-        cleaned_queries = [q.replace(' ', '') for q in queries]
-        
-        print(f"⚠️ Note: Mapping search queries {queries} to hashtags {cleaned_queries}")
-        return await self.scrape_hashtag(cleaned_queries, count, since_date)
+        limit = count if count else 100
+        run_input = {
+            "searchQueries": queries,
+            "resultsPerPage": limit,
+            "shouldDownloadVideos": False,
+            "commentsPerVideo": comments_per_video
+        }
+        return await self._run_actor(run_input, limit, since_date, comments_per_video)
 
     async def close(self):
         pass
 
 
 # Synchronous wrappers
-def scrape_hashtag_sync(hashtags, count=None, since_date=None, api_token=None):
+def scrape_hashtag_sync(hashtags, count=None, since_date=None, api_token=None, comments_per_video=0):
     scraper = TikTokScraper(api_token)
-    return asyncio.run(scraper.scrape_hashtag(hashtags, count, since_date))
+    return asyncio.run(scraper.scrape_hashtag(hashtags, count, since_date, comments_per_video))
 
 def scrape_user_sync(usernames, count=None, since_date=None, api_token=None, comments_per_video=0):
     scraper = TikTokScraper(api_token)
     return asyncio.run(scraper.scrape_user(usernames, count, since_date, comments_per_video))
 
-def scrape_search_sync(queries, count=None, since_date=None, api_token=None):
+def scrape_search_sync(queries, count=None, since_date=None, api_token=None, comments_per_video=0):
     scraper = TikTokScraper(api_token)
-    return asyncio.run(scraper.scrape_search(queries, count, since_date))
+    return asyncio.run(scraper.scrape_search(queries, count, since_date, comments_per_video))

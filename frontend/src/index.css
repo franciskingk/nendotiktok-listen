@@ -1,0 +1,144 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* TikTok Analytics Dashboard Design System
+   Dark theme with cyan/magenta accent colors */
+
+@layer base {
+  :root {
+    /* Light theme */
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: 174 72% 45%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 325 78% 55%;
+    --secondary-foreground: 222 47% 11%;
+
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --accent: 325 78% 55%;
+    --accent-foreground: 222 47% 11%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 174 72% 45%;
+
+    --radius: 0.75rem;
+
+    /* Custom dashboard colors - optimized for light theme */
+    --cyan: 174 72% 45%;
+    --cyan-glow: 174 90% 60%;
+    --magenta: 325 78% 55%;
+    --magenta-glow: 325 90% 65%;
+    --purple: 280 70% 55%;
+    --green: 142 76% 36%;
+    --amber: 38 92% 50%;
+    --blue: 217 91% 50%;
+
+    /* Glass morphism - light version */
+    --glass-bg: 0 0% 100% / 0.7;
+    --glass-border: 214.3 31.8% 91.4% / 0.5;
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(174 72% 45%), hsl(217 91% 50%));
+    --gradient-accent: linear-gradient(135deg, hsl(325 78% 55%), hsl(280 70% 55%));
+    --gradient-card: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(210 40% 98%) 100%);
+    --gradient-glow-cyan: radial-gradient(ellipse at center, hsl(174 90% 60% / 0.1) 0%, transparent 70%);
+    --gradient-glow-magenta: radial-gradient(ellipse at center, hsl(325 90% 65% / 0.1) 0%, transparent 70%);
+
+    /* Shadows - softer for light theme */
+    --shadow-glow-cyan: 0 8px 30px -10px hsl(174 72% 45% / 0.3);
+    --shadow-glow-magenta: 0 8px 30px -10px hsl(325 78% 55% / 0.3);
+    --shadow-card: 0 10px 40px -10px hsl(222 47% 10% / 0.1);
+
+    /* Sidebar - light theme */
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 222 47% 20%;
+    --sidebar-primary: 174 72% 45%;
+    --sidebar-primary-foreground: 210 40% 98%;
+    --sidebar-accent: 210 40% 96.1%;
+    --sidebar-accent-foreground: 222 47% 11%;
+    --sidebar-border: 214.3 31.8% 91.4%;
+    --sidebar-ring: 174 72% 45%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "ss01", "ss02", "cv01";
+  }
+}
+
+@layer utilities {
+  .glass {
+    background: hsl(var(--glass-bg));
+    backdrop-filter: blur(12px);
+    border: 1px solid hsl(var(--glass-border));
+  }
+
+  .gradient-text-primary {
+    background: var(--gradient-primary);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .gradient-text-accent {
+    background: var(--gradient-accent);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .glow-cyan {
+    box-shadow: var(--shadow-glow-cyan);
+  }
+
+  .glow-magenta {
+    box-shadow: var(--shadow-glow-magenta);
+  }
+
+  .animate-pulse-glow {
+    animation: pulse-glow 3s ease-in-out infinite;
+  }
+
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}

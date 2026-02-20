@@ -35,3 +35,16 @@ client_secret.json
 
 # Streamlit
 .streamlit/
+
+# Node
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# Local Data
+data_cache.json
+config.json
+
+# OS
+.DS_Store
+Thumbs.db

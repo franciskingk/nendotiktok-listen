@@ -73,8 +73,8 @@ class SheetsManager:
             if not self.worksheet.row_values(1):
                 headers = [
                     'timestamp', 'video_id', 'video_url', 'caption', 'author',
-                    'likes', 'comments', 'shares', 'views', 'publish_date',
-                    'hashtags', 'mentions'
+                    'likes', 'comments', 'shares', 'saves', 'views', 'publish_date',
+                    'hashtags', 'mentions', 'thumbnail_url'
                 ]
                 self.worksheet.append_row(headers)
 
@@ -175,10 +175,12 @@ class SheetsManager:
                     data.get('likes', 0),
                     data.get('comments', 0),
                     data.get('shares', 0),
+                    data.get('saves', 0),
                     data.get('views', 0),
                     data.get('publish_date', ''),
                     data.get('hashtags', ''),
-                    data.get('mentions', '')
+                    data.get('mentions', ''),
+                    data.get('thumbnail_url', '')
                 ]
                 
                 self.worksheet.append_row(row)
@@ -207,7 +209,7 @@ class SheetsManager:
             df = pd.DataFrame(data)
             
             # Convert numeric columns
-            numeric_cols = ['likes', 'comments', 'shares', 'views']
+            numeric_cols = ['likes', 'comments', 'shares', 'saves', 'views']
             for col in numeric_cols:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
@@ -222,6 +224,35 @@ class SheetsManager:
             
         except Exception as e:
             print(f"Error retrieving data: {e}")
+            return pd.DataFrame()
+    def get_all_comments(self):
+        """
+        Retrieve all comment data from the Comments sheet as pandas DataFrame
+        
+        Returns:
+            pandas DataFrame with all comments
+        """
+        try:
+            if not self.comments_sheet:
+                return pd.DataFrame()
+            
+            data = self.comments_sheet.get_all_records()
+            df = pd.DataFrame(data)
+            
+            # Convert numeric columns
+            if 'likes' in df.columns:
+                df['likes'] = pd.to_numeric(df['likes'], errors='coerce').fillna(0)
+            
+            # Convert date columns
+            if 'date' in df.columns:
+                df['date'] = pd.to_datetime(df['date'], errors='coerce')
+            if 'scraped_at' in df.columns:
+                df['scraped_at'] = pd.to_datetime(df['scraped_at'], errors='coerce')
+            
+            return df
+            
+        except Exception as e:
+            print(f"Error retrieving comments: {e}")
             return pd.DataFrame()
     
     def get_sheet_url(self):
