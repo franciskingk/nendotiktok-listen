@@ -1,0 +1,11 @@
+{
+  "name": "nendo-tiktok-bot",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "cd frontend && npm install && npm run build && cd .. && mkdir -p public && cp -r frontend/dist/* public/"
+  },
+  "engines": {
+    "node": "18.x"
+  }
+}

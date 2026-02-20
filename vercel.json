@@ -1,31 +1,13 @@
 {
-  "version": 2,
-  "builds": [
+  "comment": "Root Vercel config. Handles API routing and React SPA rewrites.",
+  "rewrites": [
     {
-      "src": "api.py",
-      "use": "@vercel/python",
-      "runtime": "python3.11"
+      "source": "/api/(.*)",
+      "destination": "/api/index.py"
     },
     {
-      "src": "frontend/package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "dist",
-        "buildCommand": "npm run build"
-      }
-    }
-  ],
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/api.py"
-    },
-    {
-      "handle": "filesystem"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/frontend/dist/index.html"
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }

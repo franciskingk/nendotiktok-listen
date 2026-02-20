@@ -1,0 +1,614 @@
+{
+  "model" : "gemini-3-pro-preview",
+  "messages" : [ {
+    "role" : "system",
+    "content" : "<instructions>\nYou are the Search Agent, a code researcher that can answer, plan, or hand off implementation.\n\nObjective: LUTZ\nDeliverable: one of: answer, task list, or Code Agent invocation\n\nYour goal is to gather enough context to either answer the question, produce a task list, or invoke the Code Agent for a small change.\n\nYour responsibilities are:\n  1.  **Find & Discover:** Use search and inspection tools to locate relevant code (files, classes, methods).\n  2.  **Curate & Prune:** Aggressively prune the Workspace to leave *only* essential context.\n3.  **Handoff:** Your final output is a clean workspace ready for the Code Agent.\n\nRemember: **You must never write, create, or modify code.** Your purpose is to *find* existing code, not *create* new code.\n\nMemory model (reliability):\n  - Durable memory is ONLY the Workspace (fragments + SpecialText such as Discarded Context).\n  - Chat history (including tool outputs) may be summarized or truncated; do NOT rely on it to retain details.\n  - If you might need something later, persist it into the Workspace:\n      - For structure/types/navigation: add class/file summaries.\n      - For behavior: add method sources; escalate to class source or full files only when needed.\n      - When dropping, record breadcrumbs in Discarded Context via dropWorkspaceFragments (keyFacts + dropReason).\n  - Summaries can serve as an index: add a summary to see the API/structure, then selectively add method sources or full files only if implementation details are needed.\n\nCritical rules:\n  1) PRUNE the Workspace continuously.\n     - You may drop a fragment only when it is:\n         (a) unrelated to the goal, OR\n         (b) adequately replaced by smaller Workspace artifacts (method sources and/or class/file summaries).\n     - When using dropWorkspaceFragments, provide:\n            keyFacts: Key facts to retain: file paths, class/method names, constraints, notable behavior. Use 'No relevant facts' if nothing worth preserving. Describe what IS, not what SHOULD BE. No action items for the Code Agent.\n            dropReason: One short sentence: why is it safe to drop this fragment?\n     - Workspace granularity (Prefer the smallest sufficient unit of context):\n         - Structure/types/navigation: class or file summary is usually sufficient.\n         - Behavior/implementation: method source > class source > full file.\n  2) Use search and inspection tools to discover relevant code, including classes/methods/usages/call graphs.\n     - Search tool selection:\n          Definitions / declarations only?\n          -> searchSymbols\n          How is something used, accessed, obtained, injected, or called?\n          -> scanUsages\n          Strings, configs, markdown, comments, reflection, or unknown names?\n          -> findFilesContaining\n     - Summary limitations: Summaries only include declared symbols (classes, methods, fields).\n       They do NOT surface local variables or hardcoded strings like environment variable names,\n       system properties, or comments. If findFilesContaining finds a hit in a file but the summary\n       doesn't reveal the match, you MUST load the full file or method source to see the actual content.\n  3) The symbol-based tools only have visibility into the following file types: Typescript, JavaScript, Python\n     Use text-based tools if you need to search other file types.\n  4) Group related lookups into a single tool call when possible.\n  5) Your responsibility is to gather and curate the minimum sufficient context, then take the appropriate next step.\n     Do not write code, and do not attempt to write the solution or pseudocode for the solution.\n     Your job is to *gather* the materials; the Code Agent's job is to *use* them.\n     Where code changes are needed, add the *target files* to the workspace using `addFilesToWorkspace`\n     and let the Code Agent write the code. (For more localized changes, you can use `addMethodsToWorkspace`\n     or `addClassesToWorkspace`, instead of adding entire files.)\n     Note: Code Agent will also take care of creating new files; you only need to add existing files to the Workspace.\n  6) When you have enough information to take a final action, do so.\n     There are no bonus points for grooming the perfect Workspace.\n\nWorking efficiently:\n  - Think before calling tools.\n  - Make multiple tool calls at once when searching for different types of code. Dropping\n    fragments should always be done in conjunction with other tools, since you will gain\n    no new information from the drop result.\n  - If you already know what to add, use Workspace tools directly; do not search redundantly.\n\nExternal library discovery:\n  - When the goal requires using an external library, search for its key classes/modules first\n  - If NOT found in Code Intelligence, use `importDependency` to import it:\n    * Java: `importDependency(\"com.fasterxml.jackson.core:jackson-databind\")`\n    * Python: `importDependency(\"requests\")` or `importDependency(\"numpy 2.0.0\")`\n    * Rust: `importDependency(\"serde\")` or `importDependency(\"tokio 1.0\")`\n    * Node.js: `importDependency(\"lodash\")` or `importDependency(\"@types/node\")`\n  - Once imported, the library becomes searchable and can be added to the Workspace.\n  - This helps Code Agent see actual API signatures and write more accurate code.\n</instructions>\n"
+  }, {
+    "role" : "user",
+    "content" : [ {
+      "type" : "text",
+      "text" : "<workspace>\n[Image content provided out of band]\n\n<fragment description=\"api.py\">\nfrom fastapi import FastAPI, HTTPException, Request\r\nfrom fastapi.middleware.cors import CORSMiddleware\r\nfrom pydantic import BaseModel\r\nfrom typing import Optional, List, Dict, Any\r\nimport os\r\nimport json\r\nfrom datetime import datetime\r\nimport pandas as pd\r\nimport asyncio\r\n\r\n# Import existing modules\r\nfrom scraper import scrape_hashtag_sync, scrape_user_sync, scrape_search_sync\r\nfrom analysis import TikTokAnalyzer\r\nfrom sheets import SheetsManager\r\n\r\napp = FastAPI(title=\"TikTok Pulse API\")\r\n\r\n# Configure CORS\r\napp.add_middleware(\r\n    CORSMiddleware,\r\n    allow_origins=[\"*\"],  # In production, specify the actual frontend URL\r\n    allow_credentials=True,\r\n    allow_methods=[\"*\"],\r\n    allow_headers=[\"*\"],\r\n)\r\n\r\n# Initialize Analyzer\r\nanalyzer = TikTokAnalyzer()\r\n\r\nCONFIG_FILE = \"config.json\"\r\nDATA_CACHE = \"data_cache.json\"\r\n\r\ndef load_local_data():\r\n    if os.path.exists(DATA_CACHE):\r\n        try:\r\n            with open(DATA_CACHE, \"r\") as f:\r\n                return json.load(f)\r\n        except:\r\n            pass\r\n    return {\"videos\": [], \"comments\": []}\r\n\r\ndef save_local_data(data):\r\n    # Load existing to avoid overwriting all\r\n    existing = load_local_data()\r\n    \r\n    # Merge videos (deduplicate by video_id)\r\n    video_ids = {v['video_id'] for v in existing['videos']}\r\n    for v in data.get('videos', []):\r\n        if str(v['video_id']) not in video_ids:\r\n            existing['videos'].append(v)\r\n            video_ids.add(str(v['video_id']))\r\n            \r\n    # Merge comments (deduplicate by comment_id)\r\n    comment_ids = {c['comment_id'] for c in existing['comments']}\r\n    for c in data.get('comments', []):\r\n        if str(c['comment_id']) not in comment_ids:\r\n            existing['comments'].append(c)\r\n            comment_ids.add(str(c['comment_id']))\r\n            \r\n    with open(DATA_CACHE, \"w\") as f:\r\n        json.dump(existing, f)\r\n\r\ndef load_config():\r\n    if os.path.exists(CONFIG_FILE):\r\n        try:\r\n            with open(CONFIG_FILE, \"r\") as f:\r\n                config = json.load(f)\r\n                if \"groups\" not in config:\r\n                    config[\"groups\"] = []\r\n                return config\r\n        except:\r\n            pass\r\n    return {\"sheet_url\": \"\", \"apify_token\": \"\", \"groups\": []}\r\n\r\ndef save_config(config):\r\n    with open(CONFIG_FILE, \"w\") as f:\r\n        json.dump(config, f)\r\n\r\nclass SettingsRequest(BaseModel):\r\n    sheet_url: str\r\n    apify_token: Optional[str] = None\r\n\r\nclass KeywordGroup(BaseModel):\r\n    name: str\r\n    keywords: List[str]\r\n    exclude_keywords: List[str] = []\r\n    exact_match: bool = False\r\n\r\n@app.get(\"/api/settings\")\r\ndef get_settings():\r\n    return load_config()\r\n\r\n@app.post(\"/api/settings\")\r\ndef update_settings(request: SettingsRequest):\r\n    try:\r\n        config = load_config()\r\n        config[\"sheet_url\"] = request.sheet_url\r\n        if request.apify_token is not None:\r\n            config[\"apify_token\"] = request.apify_token\r\n        save_config(config)\r\n        print(f\"DEBUG: Saved config: {config}\")\r\n        return {\"success\": True, \"config\": config}\r\n    except Exception as e:\r\n        print(f\"DEBUG ERROR: {e}\")\r\n        raise HTTPException(status_code=500, detail=str(e))\r\n\r\n@app.post(\"/api/groups\")\r\ndef add_group(group: KeywordGroup):\r\n    config = load_config()\r\n    # Remove existing group with same name if exists\r\n    config[\"groups\"] = [g for g in config[\"groups\"] if g[\"name\"] != group.name]\r\n    config[\"groups\"].append(group.dict())\r\n    save_config(config)\r\n    return {\"success\": True, \"groups\": config[\"groups\"]}\r\n\r\n@app.delete(\"/api/groups/{name}\")\r\ndef delete_group(name: str):\r\n    config = load_config()\r\n    config[\"groups\"] = [g for g in config[\"groups\"] if g[\"name\"] != name]\r\n    save_config(config)\r\n    return {\"success\": True, \"groups\": config[\"groups\"]}\r\n\r\nclass ScrapeRequest(BaseModel):\r\n    scrape_type: str  # \"Hashtag\", \"Username\", \"Keyword\"\r\n    search_input: str\r\n    video_count: Optional[int] = 50\r\n    since_date: Optional[str] = None\r\n    apify_token: str\r\n    scrape_comments: bool = False\r\n    comments_limit: Optional[int] = 0\r\n\r\n@app.get(\"/api/health\")\r\ndef health_check():\r\n    return {\r\n        \"status\": \"healthy\", \r\n        \"timestamp\": datetime.now().isoformat(),\r\n        \"credentials_found\": os.path.exists(\"credentials.json\")\r\n    }\r\n\r\n@app.get(\"/api/data\")\r\nasync def get_data():\r\n    try:\r\n        config = load_config()\r\n        local_data = load_local_data()\r\n        \r\n        videos = local_data.get(\"videos\", [])\r\n        comments = local_data.get(\"comments\", [])\r\n        \r\n        sheet_url = config.get(\"sheet_url\")\r\n        manager = SheetsManager(sheet_url=sheet_url if sheet_url else None)\r\n        \r\n        if manager.connect():\r\n            df_videos = manager.get_all_data()\r\n            df_comments = manager.get_all_comments()\r\n            \r\n            if not df_videos.empty:\r\n                # Merge Sheets data into the list, avoiding duplicates from local cache\r\n                sheet_videos = df_videos.to_dict(orient='records')\r\n                local_ids = {str(v['video_id']) for v in videos}\r\n                for v in sheet_videos:\r\n                    if str(v['video_id']) not in local_ids:\r\n                        videos.append(v)\r\n            \r\n            if not df_comments.empty:\r\n                sheet_comments = df_comments.to_dict(orient='records')\r\n                local_c_ids = {str(c['comment_id']) for c in comments}\r\n                for c in sheet_comments:\r\n                    if str(c['comment_id']) not in local_c_ids:\r\n                        comments.append(c)\r\n\r\n        # Convert list to DataFrame for analysis\r\n        df_videos = pd.DataFrame(videos)\r\n        df_comments = pd.DataFrame(comments)\r\n        \r\n        if not df_videos.empty:\r\n            df_videos = analyzer.calculate_engagement_rate(df_videos)\r\n            df_videos = analyzer.add_sentiment_analysis(df_videos, method='vader')\r\n            if 'publish_date' in df_videos.columns:\r\n                df_videos['publish_date'] = pd.to_datetime(df_videos['publish_date']).dt.strftime('%Y-%m-%d %H:%M:%S')\r\n            if 'timestamp' in df_videos.columns:\r\n                df_videos['timestamp'] = pd.to_datetime(df_videos['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')\r\n        \r\n        if not df_comments.empty:\r\n            df_comments = analyzer.add_sentiment_analysis(df_comments, method='vader', text_column='text')\r\n            if 'date' in df_comments.columns:\r\n                df_comments['date'] = pd.to_datetime(df_comments['date']).dt.strftime('%Y-%m-%d %H:%M:%S')\r\n            if 'scraped_at' in df_comments.columns:\r\n                df_comments['scraped_at'] = pd.to_datetime(df_comments['scraped_at']).dt.strftime('%Y-%m-%d %H:%M:%S')\r\n\r\n        return {\r\n            \"videos\": df_videos.to_dict(orient='records') if not df_videos.empty else [],\r\n            \"comments\": df_comments.to_dict(orient='records') if not df_comments.empty else [],\r\n            \"credentials_found\": os.path.exists(\"credentials.json\")\r\n        }\r\n    except Exception as e:\r\n        print(f\"API Data Error: {e}\")\r\n        return {\"videos\": [], \"comments\": [], \"error\": str(e)}\r\n\r\n@app.post(\"/api/scrape\")\r\nasync def run_scrape(request: ScrapeRequest):\r\n    try:\r\n        config = load_config()\r\n        since_dt = None\r\n        if request.since_date:\r\n            try:\r\n                since_dt = datetime.fromisoformat(request.since_date)\r\n            except:\r\n                pass\r\n\r\n        results = []\r\n        loop = asyncio.get_event_loop()\r\n        \r\n        if request.scrape_type == \"Hashtag\":\r\n            results = await loop.run_in_executor(None, scrape_hashtag_sync, \r\n                        request.search_input, request.video_count, since_dt, request.apify_token, request.comments_limit if request.scrape_comments else 0)\r\n        elif request.scrape_type == \"Username\":\r\n            results = await loop.run_in_executor(None, scrape_user_sync, \r\n                        request.search_input, request.video_count, since_dt, request.apify_token, request.comments_limit if request.scrape_comments else 0)\r\n        else: # Keyword\r\n            results = await loop.run_in_executor(None, scrape_search_sync, \r\n                        request.search_input, request.video_count, since_dt, request.apify_token, request.comments_limit if request.scrape_comments else 0)\r\n        \r\n        if results:\r\n            all_comments = []\r\n            for video in results:\r\n                if 'scraped_comments' in video:\r\n                    all_comments.extend(video['scraped_comments'])\r\n                    del video['scraped_comments']\r\n            \r\n            # Save to local cache regardless of Sheets status\r\n            save_local_data({\"videos\": results, \"comments\": all_comments})\r\n            \r\n            # Try to save to Sheets if connected\r\n            manager = SheetsManager(sheet_url=config.get(\"sheet_url\") if config.get(\"sheet_url\") else None)\r\n            if manager.connect():\r\n                manager.append_data(results)\r\n                if all_comments:\r\n                    manager.append_comments(all_comments)\r\n            \r\n            return {\r\n                \"success\": True, \r\n                \"video_count\": len(results), \r\n                \"comment_count\": len(all_comments)\r\n            }\r\n        else:\r\n            return {\"success\": False, \"error\": \"No results found\"}\r\n            \r\n    except Exception as e:\r\n        raise HTTPException(status_code=500, detail=str(e))\r\n\r\nif __name__ == \"__main__\":\r\n    import uvicorn\r\n    uvicorn.run(app, host=\"0.0.0.0\", port=8001)\r\n\n</fragment>\n\n\n<fragment description=\"frontend\\package.json\">\n{\r\n  \"name\": \"vite_react_shadcn_ts\",\r\n  \"private\": true,\r\n  \"version\": \"0.0.0\",\r\n  \"type\": \"module\",\r\n  \"scripts\": {\r\n    \"dev\": \"vite\",\r\n    \"build\": \"vite build\",\r\n    \"build:dev\": \"vite build --mode development\",\r\n    \"lint\": \"eslint .\",\r\n    \"preview\": \"vite preview\",\r\n    \"test\": \"vitest run\",\r\n    \"test:watch\": \"vitest\"\r\n  },\r\n  \"dependencies\": {\r\n    \"@hookform/resolvers\": \"^3.10.0\",\r\n    \"@radix-ui/react-accordion\": \"^1.2.11\",\r\n    \"@radix-ui/react-alert-dialog\": \"^1.1.14\",\r\n    \"@radix-ui/react-aspect-ratio\": \"^1.1.7\",\r\n    \"@radix-ui/react-avatar\": \"^1.1.10\",\r\n    \"@radix-ui/react-checkbox\": \"^1.3.2\",\r\n    \"@radix-ui/react-collapsible\": \"^1.1.11\",\r\n    \"@radix-ui/react-context-menu\": \"^2.2.15\",\r\n    \"@radix-ui/react-dialog\": \"^1.1.14\",\r\n    \"@radix-ui/react-dropdown-menu\": \"^2.1.15\",\r\n    \"@radix-ui/react-hover-card\": \"^1.1.14\",\r\n    \"@radix-ui/react-label\": \"^2.1.7\",\r\n    \"@radix-ui/react-menubar\": \"^1.1.15\",\r\n    \"@radix-ui/react-navigation-menu\": \"^1.2.13\",\r\n    \"@radix-ui/react-popover\": \"^1.1.14\",\r\n    \"@radix-ui/react-progress\": \"^1.1.7\",\r\n    \"@radix-ui/react-radio-group\": \"^1.3.7\",\r\n    \"@radix-ui/react-scroll-area\": \"^1.2.9\",\r\n    \"@radix-ui/react-select\": \"^2.2.5\",\r\n    \"@radix-ui/react-separator\": \"^1.1.7\",\r\n    \"@radix-ui/react-slider\": \"^1.3.5\",\r\n    \"@radix-ui/react-slot\": \"^1.2.3\",\r\n    \"@radix-ui/react-switch\": \"^1.2.5\",\r\n    \"@radix-ui/react-tabs\": \"^1.1.12\",\r\n    \"@radix-ui/react-toast\": \"^1.2.14\",\r\n    \"@radix-ui/react-toggle\": \"^1.1.9\",\r\n    \"@radix-ui/react-toggle-group\": \"^1.1.10\",\r\n    \"@radix-ui/react-tooltip\": \"^1.2.7\",\r\n    \"@tanstack/react-query\": \"^5.83.0\",\r\n    \"class-variance-authority\": \"^0.7.1\",\r\n    \"clsx\": \"^2.1.1\",\r\n    \"cmdk\": \"^1.1.1\",\r\n    \"date-fns\": \"^3.6.0\",\r\n    \"embla-carousel-react\": \"^8.6.0\",\r\n    \"input-otp\": \"^1.4.2\",\r\n    \"lucide-react\": \"^0.462.0\",\r\n    \"next-themes\": \"^0.3.0\",\r\n    \"react\": \"^18.3.1\",\r\n    \"react-day-picker\": \"^8.10.1\",\r\n    \"react-dom\": \"^18.3.1\",\r\n    \"react-hook-form\": \"^7.61.1\",\r\n    \"react-resizable-panels\": \"^2.1.9\",\r\n    \"react-router-dom\": \"^6.30.1\",\r\n    \"recharts\": \"^2.15.4\",\r\n    \"sonner\": \"^1.7.4\",\r\n    \"tailwind-merge\": \"^2.6.0\",\r\n    \"tailwindcss-animate\": \"^1.0.7\",\r\n    \"vaul\": \"^0.9.9\",\r\n    \"zod\": \"^3.25.76\"\r\n  },\r\n  \"devDependencies\": {\r\n    \"@eslint/js\": \"^9.32.0\",\r\n    \"@testing-library/jest-dom\": \"^6.6.0\",\r\n    \"@testing-library/react\": \"^16.0.0\",\r\n    \"@tailwindcss/typography\": \"^0.5.16\",\r\n    \"@types/node\": \"^22.16.5\",\r\n    \"@types/react\": \"^18.3.23\",\r\n    \"@types/react-dom\": \"^18.3.7\",\r\n    \"@vitejs/plugin-react-swc\": \"^3.11.0\",\r\n    \"autoprefixer\": \"^10.4.21\",\r\n    \"eslint\": \"^9.32.0\",\r\n    \"eslint-plugin-react-hooks\": \"^5.2.0\",\r\n    \"eslint-plugin-react-refresh\": \"^0.4.20\",\r\n    \"globals\": \"^15.15.0\",\r\n    \"jsdom\": \"^20.0.3\",\r\n    \"postcss\": \"^8.5.6\",\r\n    \"tailwindcss\": \"^3.4.17\",\r\n    \"typescript\": \"^5.8.3\",\r\n    \"typescript-eslint\": \"^8.38.0\",\r\n    \"vite\": \"^5.4.19\",\r\n    \"vitest\": \"^3.2.4\"\r\n  }\r\n}\n</fragment>\n\n\n<fragment description=\"frontend\\vite.config.ts\">\nimport { defineConfig } from \"vite\";\r\nimport react from \"@vitejs/plugin-react-swc\";\r\nimport path from \"path\";\r\n\r\n// https://vitejs.dev/config/\r\nexport default defineConfig(({ mode }) => ({\r\n  server: {\r\n    host: \"::\",\r\n    port: 8081,\r\n    hmr: {\r\n      overlay: false,\r\n    },\r\n  },\r\n  plugins: [react()],\r\n  resolve: {\r\n    alias: {\r\n      \"@\": path.resolve(__dirname, \"./src\"),\r\n    },\r\n  },\r\n}));\r\n\n</fragment>\n\n\n<fragment description=\"Summary of frontend\\vercel.json\">\nNo summary found for: frontend\\vercel.json\n</fragment>\n\n\n<fragment description=\"Summary of requirements.txt\">\nNo summary found for: requirements.txt\n</fragment>\n\n\n<fragment description=\"Summary of frontend\\index.html\">\nNo summary found for: frontend\\index.html\n</fragment>\n\n\n<fragment description=\"frontend\\vercel.json\">\n{\r\n    \"rewrites\": [\r\n        {\r\n            \"source\": \"/(.*)\",\r\n            \"destination\": \"/index.html\"\r\n        }\r\n    ]\r\n}\n</fragment>\n\n\n<fragment description=\"requirements.txt\">\nstreamlit==1.31.0\r\nplotly==5.18.0\r\npandas==2.1.4\r\nTikTokApi==6.2.0\r\nplaywright==1.41.0\r\ngspread==6.0.0\r\noauth2client==4.1.3\r\ntextblob==0.17.1\r\nvaderSentiment==3.3.2\r\nwordcloud==1.9.3\r\nmatplotlib==3.8.2\r\npython-dotenv==1.0.0\r\nPillow==10.2.0\r\napify-client==1.6.4\r\n\n</fragment>\n\n\n<fragment description=\"frontend\\index.html\">\n<!doctype html>\r\n<html lang=\"en\">\r\n\r\n<head>\r\n  <meta charset=\"UTF-8\" />\r\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\r\n  <link rel=\"icon\" type=\"image/svg+xml\" href=\"/logo-icon.svg\" />\r\n  <title>Nendo TikTok Bot | Intelligence Platform</title>\r\n  <meta name=\"description\" content=\"Nendo TikTok Social Listening & Intelligence Platform\" />\r\n  <meta name=\"author\" content=\"Nendo\" />\r\n\r\n  <meta property=\"og:title\" content=\"Nendo TikTok Bot\" />\r\n  <meta property=\"og:description\" content=\"Nendo TikTok Social Listening & Intelligence Platform\" />\r\n  <meta property=\"og:type\" content=\"website\" />\r\n\r\n  <meta name=\"twitter:card\" content=\"summary_large_image\" />\r\n  <meta name=\"twitter:site\" content=\"@Nendo\" />\r\n</head>\r\n\r\n<body>\r\n  <div id=\"root\"></div>\r\n  <script type=\"module\" src=\"/src/main.tsx\"></script>\r\n</body>\r\n\r\n</html>\n</fragment>\n\n\n<fragment description=\"Discarded Context\">\n{\r\n  \"frontend\\\\src\\\\main.tsx\" : \"Key facts: Mounts App to #root.. Reason: Standard entry point, not relevant for routing config.\",\r\n  \"frontend\\\\src\\\\pages\\\\NotFound.tsx\" : \"Key facts: Logs 404 errors to console.. Reason: Component implementation details irrelevant for routing config.\",\r\n  \"frontend\\\\README.md\" : \"Key facts: Deployment instructions: Root Directory 'frontend', Output 'dist', Build 'npm run build'.. Reason: General info, redundant with specific file contents.\",\r\n  \"frontend\\\\src\\\\App.tsx\" : \"Key facts: React Router uses BrowserRouter. Routes: / -> Index, * -> NotFound.. Reason: Client-side routing confirmed; implementation details not needed for deployment config.\",\r\n  \"README.md\" : \"Key facts: TikTok Social Listening & Analytics Dashboard. Python backend + React frontend.. Reason: General project info, not needed for specific Vercel config debugging.\"\r\n}\n</fragment>\n</workspace><project_guide>\n### AGENTS.md at .\n\n# Nendo TikTok Bot Coding Style Guide\n\n## 1. Frontend (React & TypeScript)\n\n### Component Patterns\n- **Functional Components**: Use `export const ComponentName = (...) => { ... }` rather than function declarations.\n- **Conditional Styling**: Use the `cn()` utility (based on `clsx` and `tailwind-merge`) for all dynamic class merging.\n- **Prop Interfaces**: Define `interface ComponentProps` immediately above the component. Use `React.ElementType` for props that accept Lucide icons.\n- **Icon Rendering**: Render dynamic icons using the `<item.icon />` syntax by assigning the icon to a lowercase variable or property.\n\n### State & Navigation\n- **View Management**: Use a `currentView` string and `onNavigate` callback pattern for simple SPA navigation within a dashboard layout.\n- **Controlled Collapsibles**: Prefer manual state management (`collapsed`, `setCollapsed`) for sidebars to ensure precise control over layout transitions.\n\n### Project Configuration\n- **Path Aliasing**: Use the `@/` prefix to reference the `src` directory, configured via Vite and TypeScript.\n- **Vite Plugins**: Use `@vitejs/plugin-react-swc` for faster builds and HMR.\n\n## 2. Python (Streamlit & Scraping)\n\n### Module Architecture\n- **Sync/Async Hybrid**: Implement core logic (like scrapers) using `async` methods, but provide `_sync` wrapper functions using `asyncio.run()` for compatibility with Streamlit’s synchronous execution model.\n- **Resource Management**: Use `@st.cache_resource` for singleton-like objects such as database managers (`SheetsManager`) or ML analyzers (`TikTokAnalyzer`).\n\n### Data Handling\n- **Pandas Integration**: Return `pd.DataFrame` from all analysis and data retrieval methods.\n- **Defensive Mapping**: When parsing external API results (e.g., Apify), use a private `_map_result` method with extensive `.get()` calls and `try/except` blocks to handle inconsistent JSON schemas.\n- **Data Deduplication**: Maintain a `set` of unique identifiers (e.g., `video_id`) when appending data to external storage (Google Sheets) to prevent duplicates.\n\n### UI & Visualization\n- **Session State**: Explicitly initialize all state variables (e.g., `data_loaded`, `df`) at the start of the `app.py`.\n- **Plotly Configuration**: Use `rgba(0,0,0,0)` for `plot_bgcolor` and `paper_bgcolor` to ensure charts blend seamlessly with the Streamlit theme.\n- **Progressive Columns**: Use `st.column_config` (e.g., `ProgressColumn`, `LinkColumn`) to turn standard DataFrames into interactive dashboards.\n\n## 3. General Conventions\n\n### External Integrations\n- **Google Sheets**: Treat the first row of a worksheet as the schema definition. Automatically initialize headers if `row_values(1)` is empty.\n- **Environment Variables**: Use `os.getenv()` as a fallback for API tokens, but prioritize explicit parameter passing for flexibility.\n\n### Error Handling\n- **Visual Feedback**: Use `st.sidebar.error` or `st.sidebar.warning` instead of generic print statements for user-facing errors in the dashboard.\n- **Silent Failures**: In mapping functions or loops, use `continue` within `try/except` blocks to ensure a single malformed data point doesn't crash the entire ingestion pipeline.\n</project_guide>\n\n"
+    }, {
+      "type" : "image_url",
+      "image_url" : {
+        "url" : "data:image/png;base64,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",
+        "detail" : "low"
+      }
+    } ]
+  }, {
+    "role" : "assistant",
+    "content" : "Thank you for providing these Workspace contents."
+  }, {
+    "role" : "user",
+    "content" : "What tools do you want to use next?"
+  }, {
+    "role" : "assistant",
+    "content" : "",
+    "tool_calls" : [ {
+      "id" : "",
+      "type" : "function",
+      "function" : {
+        "name" : "skimDirectory",
+        "arguments" : "{\"directoryPath\":\".\",\"reasoning\":\"Check for deployment configurations and project structure at the root.\"}"
+      }
+    }, {
+      "id" : "",
+      "type" : "function",
+      "function" : {
+        "name" : "skimDirectory",
+        "arguments" : "{\"directoryPath\":\"frontend\",\"reasoning\":\"Check frontend structure for deployment configurations.\"}"
+      }
+    } ],
+    "reasoning_content" : "**Initiating Deployment Strategy**\n\nI'm focusing on the deployment plan, considering the FastAPI backend (`api.py`) and the frontend setup within the `frontend` directory (including `package.json` and `vite.config.ts`). The presence of `requirements.txt` is important for managing dependencies. I'm prioritizing how to best trigger deployment following the user's intent to \"commit the changes here\".\n\n\n**Analyzing Deployment Requirements**\n\nI'm now investigating potential deployment configuration conflicts, specifically with the FastAPI backend and React frontend. The `vercel.json` rewrite suggests Vercel is handling client-side routing, but it may not address the API. I'm focusing on the 404 error, as well as the need to resolve whether the backend can be deployed alongside the frontend in Vercel.\n\n\n**Investigating Vercel Configuration**\n\nI'm now zeroing in on the Vercel setup. I've realized the structure with `api.py` at the root and `frontend` in a subdirectory is important for Vercel. I'm focusing on how Vercel handles the backend, especially given the \"404: NOT_FOUND\" error. I need to verify that there isn't a conflict between the API route and the frontend routing, and confirm if there are missing or misconfigured elements for deployment. The goal is to ensure both backend and frontend deploy correctly, responding to the user's intent.\n\n\n**Formulating Deployment Strategy**\n\nI'm now formulating the deployment strategy, focusing on the configuration needed for Vercel, specifically for the FastAPI backend. I see `api.py` exposes the `app` object, which is good. The existing `frontend/vercel.json` only covers the frontend; I'm hypothesizing we need a root `vercel.json` to configure the backend deployment as well, given the \"404: NOT_FOUND\" error. I'm exploring the root directory for potential deployment configuration files. The prompt \"commit the changes here\" suggests the goal is a fully deployable code state. I'm also checking other files.\n\n\n",
+    "thought_signature" : "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"
+  }, {
+    "role" : "tool",
+    "tool_call_id" : "",
+    "content" : "<subdirectories>\n  .brokk/, .git/, frontend/\n</subdirectories>\n\n<file path=\".env.example\">\n- (no symbols found)\n</file>\n<file path=\".gitignore\">\n- (no symbols found)\n</file>\n<file path=\"AGENTS.md\">\n- (no symbols found)\n</file>\n<file path=\"analysis.py\">\n- analysis.TikTokAnalyzer\n  - __init__\n  - calculate_engagement_rate\n  - analyze_sentiment_textblob\n  - analyze_sentiment_vader\n  - add_sentiment_analysis\n  - extract_word_frequency\n  - aggregate_by_time\n  - get_top_posts\n  - get_sentiment_distribution\n</file>\n<file path=\"api.py\">\n- api.app\n- api.analyzer\n- api.CONFIG_FILE\n- api.DATA_CACHE\n- api.load_local_data\n- api.save_local_data\n- api.load_config\n- api.save_config\n- api.SettingsRequest\n- api.KeywordGroup\n- api.get_settings\n- api.update_settings\n- api.add_group\n- api.delete_group\n- api.ScrapeRequest\n- api.health_check\n- api.get_data\n- api.run_scrape\n</file>\n<file path=\"app.py\">\n- app.get_sheets_manager\n- app.get_analyzer\n- app.create_wordcloud\n- app.main\n- app.apify_token\n- app.scrape_type\n- app.search_input\n- app.use_date_limit\n- app.since_date_input\n- app.since_date\n- app.no_limit\n- app.video_count\n- app.scrape_comments\n- app.comments_limit\n- app.df\n- app.analyzer\n- app.col5\n- app.col4\n- app.acol2\n- app.acol1\n- app.acol3\n- app.top_videos\n- app.vid_cols\n- app.display_df\n- app.df_c\n- app.col2\n- app.col3\n- app.col1\n- app.sheets\n</file>\n<file path=\"README.md\">\n- (no symbols found)\n</file>\n<file path=\"scraper.py\">\n- scraper.TikTokScraper\n  - __init__\n  - initialize\n  - extract_hashtags\n  - extract_mentions\n  - _map_result\n  - _run_actor\n  - scrape_hashtag\n  - scrape_user\n  - scrape_search\n  - close\n- scraper.scrape_hashtag_sync\n- scraper.scrape_user_sync\n- scraper.scrape_search_sync\n</file>\n<file path=\"sheets.py\">\n- sheets.SheetsManager\n  - __init__\n  - connect\n  - get_existing_video_ids\n  - append_comments\n  - append_data\n  - get_all_data\n  - get_all_comments\n  - get_sheet_url\n</file>\n",
+    "name" : "skimDirectory"
+  }, {
+    "role" : "tool",
+    "tool_call_id" : "",
+    "content" : "<subdirectories>\n  public/, src/\n</subdirectories>\n\n<file path=\"frontend/.gitignore\">\n- (no symbols found)\n</file>\n<file path=\"frontend/bun.lockb\">\n- (no symbols found)\n</file>\n<file path=\"frontend/components.json\">\n- (no symbols found)\n</file>\n<file path=\"frontend/eslint.config.js\">\n- frontend.eslint.config.js\n</file>\n<file path=\"frontend/index.html\">\n- (no symbols found)\n</file>\n<file path=\"frontend/package-lock.json\">\n- (no symbols found)\n</file>\n<file path=\"frontend/package.json\">\n- (no symbols found)\n</file>\n<file path=\"frontend/postcss.config.js\">\n- (no symbols found)\n</file>\n<file path=\"frontend/README.md\">\n- (no symbols found)\n</file>\n<file path=\"frontend/tailwind.config.ts\">\n- frontend.tailwind.config.ts\n</file>\n<file path=\"frontend/tsconfig.app.json\">\n- (no symbols found)\n</file>\n<file path=\"frontend/tsconfig.json\">\n- (no symbols found)\n</file>\n<file path=\"frontend/tsconfig.node.json\">\n- (no symbols found)\n</file>\n<file path=\"frontend/vercel.json\">\n- (no symbols found)\n</file>\n<file path=\"frontend/vite.config.ts\">\n- frontend.vite.config.ts\n</file>\n<file path=\"frontend/vitest.config.ts\">\n- frontend.vitest.config.ts\n</file>\n",
+    "name" : "skimDirectory"
+  }, {
+    "role" : "user",
+    "content" : "What tools do you want to use next?"
+  }, {
+    "role" : "assistant",
+    "content" : "",
+    "tool_calls" : [ {
+      "id" : "",
+      "type" : "function",
+      "function" : {
+        "name" : "skimDirectory",
+        "arguments" : "{\"directoryPath\":\"frontend/src\",\"reasoning\":\"Checking for hardcoded API URLs in frontend source code to ensure they point to the correct backend location (relative or absolute).\"}"
+      }
+    } ],
+    "reasoning_content" : "**Preparing for Deployment**\n\nI'm focusing on the user's intent to deploy a platform, specifically the code in the GitHub repository `https://github.com/franciskingk/nendo-tiktok-bot.git`. My current thinking is centered around ensuring the codebase is fully prepared for deployment. This means verifying commits are complete.\n\n\n**Analyzing Deployment Environment**\n\nI've determined the git URL likely represents the upstream repository. The \"commit the changes here\" request is interpreted as \"prepare for deployment.\" I can address this by fixing any obvious issues. I'm also examining the 404 error, which seems like a Vercel-related issue, and looking at the existing configuration files, especially `frontend/vercel.json` and `frontend/vite.config.ts`.\n\n\n**Evaluating Deployment Strategies**\n\nI'm now considering the best deployment strategy, given the structure of the project. I've realized the Python backend, with `api.py` at the root, poses a challenge for Vercel's typical frontend and serverless function focus. My thinking leans towards either adapting the backend for Vercel functions, or deploying it separately. I'm focusing on how `vercel.json` would configure the backend build and routes. The existing 404 error reinforces the need to pinpoint how the frontend interacts with this backend.\n\n\n**Diagnosing Frontend Routing**\n\nI see a routing issue; the `vercel.json`'s rewrite rule directs all traffic to `index.html`, suitable for an SPA. I'm focusing on \"commit the changes here\" - I need to figure out which changes are required. The key files are `api.py` and the `frontend/` directory. Deploying the full platform means deploying both the frontend and backend. I'm also considering deploying the Python API as a Vercel Serverless Function, which would require restructuring the code (likely placing `api.py` in an `api/` directory). If it is a frontend 404 error, I'll need to check the build output. The frontend's `package.json` specifies `\"vite build\"`, which defaults to the `dist` directory.\n\n\n**Refining Deployment Configuration**\n\nI'm now zeroing in on configuring the deployment. My current focus is how the frontend will interact with the backend and how to define the build output. The `vercel.json` rewrite to `index.html` is the current route and entry point. The fact that `api.py` is a standalone script and the Vite configuration in `frontend/vite.config.ts` are both key to the solution. The 404 error is almost certainly a Vercel deployment issue. The Vite project is in a `frontend` subdirectory of the repo's root.\n\n\n**Confirming Deployment Structure**\n\nI'm now confirming the deployment structure based on the provided configuration. I understand the frontend resides in the `frontend` directory, which is a React environment. I've noted the build command, output directory, and the significance of the `frontend/vercel.json` file. My focus is on ensuring the Vercel project is correctly configured to handle both the frontend and the backend within the monorepo structure, especially considering the project root and possible missing configurations.\n\n\n**Investigating Deployment Failures**\n\nI'm now zeroing in on the cause of the 404 error. The styling suggests a Vercel default, not application logic. My working hypothesis is a deployment failure: either an incorrect build output configuration or, possibly, a misconfigured route. I've ruled out the possibility of a local issue, based on the error ID. I'm checking the `frontend/package.json` build script. I've confirmed a mixed repository, without root-level Vercel or package files, which supports Vercel's Python option, if requested.\n\n\n**Resolving Deployment Configurations**\n\nI'm now zeroing in on configuring the deployment. My current focus is how the frontend will interact with the backend and fixing the 404. I've realized the existing `vercel.json` config uses a legacy setup. It rewrites to `index.html`, and routes to `api.py`. I now remember how to solve this. I must ensure the needed files and dependencies are included for Vercel functions to resolve imports.\n\n\n",
+    "thought_signature" : "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"
+  }, {
+    "role" : "tool",
+    "tool_call_id" : "",
+    "content" : "<subdirectories>\n  components/, hooks/, pages/, test/\n</subdirectories>\n\n<file path=\"frontend/src/App.css\">\n- (no symbols found)\n</file>\n<file path=\"frontend/src/App.tsx\">\n- frontend.src.App.tsx\n- frontend.src.App.tsx.queryClient\n- frontend.src.App\n- frontend.src.App.tsx.App\n</file>\n<file path=\"frontend/src/index.css\">\n- (no symbols found)\n</file>\n<file path=\"frontend/src/main.tsx\">\n- frontend.src.main.tsx\n</file>\n<file path=\"frontend/src/vite-env.d.ts\">\n- (no symbols found)\n</file>\n",
+    "name" : "skimDirectory"
+  }, {
+    "role" : "user",
+    "content" : "<related_files>\nThese files (with the identifiers they declare) MAY be relevant. They are NOT in the Workspace yet.\nAdd summaries or sources if needed; otherwise ignore them.\n\n<file path=\"frontend\\src\\components\\dashboard\\Sidebar.tsx\">\n- frontend.src.components.dashboard.Sidebar.tsx\n- frontend.src.components.dashboard.NavItem\n  - icon\n  - label\n  - active\n- frontend.src.components.dashboard.Sidebar.tsx.navItems\n- frontend.src.components.dashboard.SidebarProps\n  - currentView\n  - onNavigate\n- frontend.src.components.dashboard.Sidebar.tsx.Sidebar\n- frontend.src.components.dashboard.Sidebar\n</file>\n</related_files>\n"
+  }, {
+    "role" : "assistant",
+    "content" : "Acknowledged. I will explicitly add only what is relevant."
+  }, {
+    "role" : "user",
+    "content" : "<query_or_instructions>\nGenerating New Prompt...\ncommint the changes here and i will deploy the platform. https://github.com/franciskingk/nendo-tiktok-bot.git\n</query_or_instructions>\n\n<search-objective>\n- Prefer answer(String) when no code changes are needed and the Workspace already justifies the answer (or the question is codebase-independent).\n- Prefer callCodeAgent(String instructions, boolean deferBuild) if the requested change is small.\n- Otherwise, decompose the problem with createOrReplaceTaskList(String explanation, List<TaskListEntry> tasks); do not attempt to write code yet.\n\nInvariant: Before any final action:\n  1. Prune fragments that are no longer needed (superseded by summaries or irrelevant to the goal).\n     Do not finalize while the Workspace still contains obvious noise or superseded large fragments.\n  2. Add the minimum sufficient, decision-relevant context to remove guesswork.\nAn unchanged or empty Workspace is a failure unless the question is explicitly independent of this codebase.\n\nWorkspace context guidance:\n  - If you know where to find what you're looking for, just add it, you don't need to keep searching \"just in case\".\n  - If you don't know where to find a piece of information, use search tools or skimDirectory to identify specific files/classes/methods instead of guessing.\n  - The add*ToWorkspace tools do not work with directories or globs or wildcards as parameters;\n    skimDirectory can help you narrow down your search, after which you should add only those specific items to the Workspace.\nWhen to prefer the different content types:\n  - Summaries: when you only need API signatures/types/constants.\n  - Method sources: when you need implementation details for specific methods.\n  - Full sources: when you need complete implementation details.\n</search-objective>\n\n\n\n<build-setup-task-guidance>\nIf you produce a task list, the FIRST task MUST configure the build and test stack (and any required environment variables)\nso that subsequent tasks can run `build/lint` and tests.\n</build-setup-task-guidance>\n\n<tool-instructions>\nDecide the next tool action(s) to make progress toward the objective in service of the goal.\n\n\n\nPruning mandate (do this now):\n  - Prune in parallel with exploration.\n  - Drop irrelevant/noise fragments now with dropWorkspaceFragments.\n  - Replace large fragments with smaller artifacts (addFileSummariesToWorkspace, addClassSummariesToWorkspace, addMethodsToWorkspace) when possible; drop superseded originals.\n  - Check Discarded Context before re-adding content; you may not drop pinned fragments.\n\n\n\nFinalization options:\n\n\n- Use answer(String) ONLY when the Workspace already contains sufficient context to justify the answer, OR when the question is explicitly codebase-independent. The answer needs to be Markdown-formatted (see <markdown-reminder>).\n- Use askForClarification(String queryForUser) when the goal is unclear or you cannot find the necessary information; this will ask the user directly and stop.\n\n\n- Use createOrReplaceTaskList(String explanation, List<TaskListEntry> tasks) to replace the entire task list when the request involves code changes. Titles are summarized automatically from task text; pass task texts only. Completed tasks from the previous list are implicitly dropped. Produce a clear, minimal, incremental, and testable sequence of tasks that a Code Agent can execute, once you understand where all the necessary pieces live.\n  Guidance:\n    - Each task must be self-contained; the Code Agent will not have access to your instructions or conversation history.\n    - It is CRITICAL to keep the project buildable and testable after each task; in the VERY RARE case where breaking the build\n      temporarily is necessary, YOU MUST BE EXPLICIT about this to avoid confusing the Code Agent.\n\n\n\n- Use callCodeAgent(String instructions, boolean deferBuild) to attempt implementation now in a single shot. If it succeeds, we finish; otherwise, continue with search/planning. Only use this when the goal is small enough to not need decomposition into a task list, and after you have added all the necessary context to the Workspace.\n\n- If we cannot find the answer or the request is out of scope for this codebase, use abortSearch with a clear explanation.\n\n\nYou CAN call multiple non-terminal tools in a single turn, and you SHOULD whenever you can\nusefully do so.\n\nTerminal actions (answer, createOrReplaceTaskList, callCodeAgent, abortSearch)\nmust be the ONLY tool in a turn. If final cleanup is needed (for example, dropWorkspaceFragments), do it first,\nthen finalize on the next turn. If you include a terminal together with other tools, the terminal will be ignored for this turn.\n\nRemember: it is NOT your objective to write code.\n\n\n</tool-instructions>\n\n<markdown-reminder>\nIMPORTANT: When providing explanations, thoughts, or answers, ALWAYS use Markdown for readability.\n- Use `inline code` for identifiers, file paths, and short snippets.\n- Use code blocks for longer snippets.\n- Use headers, lists, and bold text to structure your response.\n</markdown-reminder>\n\n<workspace_toc>\nHere is a list of the full contents of the Workspace that you can refer to above.\nI have pinned some of them; these may not be dropped. If it has a fragmentid instead of a pin marker, you may drop it.\n<workspace_readonly>\nThe following fragments MAY NOT BE EDITED:\n<fragment-toc description=\"Screenshot of a 404 NOT_FOUND error message dialog.\" fragmentid=\"0e7c650fb701fccad55e5225f27af6beba341b16d8bec42f84eec764f521b588\" />\n<fragment-toc description=\"Discarded Context\" pinned=\"true\" />\n<fragment-toc description=\"Summary of frontend\\vercel.json\" fragmentid=\"fdc24027-9392-4870-abed-9dd2420be918\" />\n<fragment-toc description=\"Summary of requirements.txt\" fragmentid=\"800cd98f-8fec-466f-8643-223e994e5c59\" />\n<fragment-toc description=\"Summary of frontend\\index.html\" fragmentid=\"879678dd-78b2-49e4-858d-3ba59213b187\" />\n</workspace_readonly>\n<workspace_editable>\nThe following fragments MAY BE EDITED:\n<fragment-toc description=\"requirements.txt\" fragmentid=\"b6278420-fd34-4e62-8d08-d6c5e3017345\" />\n<fragment-toc description=\"api.py\" fragmentid=\"ded6514b-033b-49bc-9815-981785903b1c\" />\n<fragment-toc description=\"frontend\\vite.config.ts\" fragmentid=\"c329a1ff-e73f-49e7-a98f-8e3ad314f3df\" />\n<fragment-toc description=\"frontend\\package.json\" fragmentid=\"948e3fd9-8351-4c82-b025-3549d0868437\" />\n<fragment-toc description=\"frontend\\index.html\" fragmentid=\"bda95db6-a233-4f92-9f9d-88d04eda2870\" />\n<fragment-toc description=\"frontend\\vercel.json\" fragmentid=\"1d72a76b-4607-4cff-bafc-584b5aada291\" />\n</workspace_editable>\n\n</workspace_toc>\n"
+  } ],
+  "stream" : true,
+  "stream_options" : {
+    "include_usage" : true
+  },
+  "max_completion_tokens" : 65535,
+  "user" : "237f4ef9-3a42-4850-a635-615fca689856",
+  "tools" : [ {
+    "type" : "function",
+    "function" : {
+      "name" : "searchSymbols",
+      "description" : "Search for symbols (class/function/field/module definitions) using static analysis.\nONLY returns symbol definitions (declarations).\nDO NOT use for usages/call sites/instantiation/access patterns — use scanUsages or findFilesContaining.\nOutput is grouped by file, then by symbol kind within each file.\n\n- kinds: CLASS, FUNCTION, FIELD, MODULE\n- FUNCTION may represent a member/instance/static method or a free/top-level function (varies by language/analyzer)\n- FIELD may represent a class/instance/static field or a top-level/module/global variable (varies by language/analyzer)\n- empty kind sections are omitted\n\nExamples:\n<file path=\"src/main/java/com/example/Foo.java\">\n[CLASS]\n- com.example.Foo\n[FUNCTION]\n- com.example.Foo.bar\n</file>\n",
+      "parameters" : {
+        "type" : "object",
+        "properties" : {
+          "patterns" : {
+            "type" : "array",
+            "description" : "Case-insensitive regex patterns to search for code symbols. Since ^ and $ are implicitly included, YOU MUST use explicit wildcarding (e.g., .*Foo.*, Abstract.*, [a-z]*DAO) unless you really want exact matches.",
+            "items" : {
+              "type" : "string"
+            }
+          },
+          "reasoning" : {
+            "type" : "string",
+            "description" : "Explanation of what you're looking for in this request so the summarizer can accurately capture it."
+          },
+          "includeTests" : {
+            "type" : "boolean",
+            "description" : "Include test files in results. Default: false."
+          }
+        },
+        "required" : [ "patterns", "reasoning", "includeTests" ]
+      }
+    }
+  }, {
+    "type" : "function",
+    "function" : {
+      "name" : "scanUsages",
+      "description" : "Returns the call sites where symbols are used and three examples of full call site source. Use this to discover how classes, methods, or fields are actually used throughout the codebase.\nUse this for questions like “how is X used/accessed/obtained/wired”.\nIf you don’t know the fully qualified symbol name, call searchSymbols once to get it.\n",
+      "parameters" : {
+        "type" : "object",
+        "properties" : {
+          "symbols" : {
+            "type" : "array",
+            "description" : "Fully qualified symbol names (package name, class name, optional member name) to find usages for",
+            "items" : {
+              "type" : "string"
+            }
+          },
+          "reasoning" : {
+            "type" : "string",
+            "description" : "Explanation of what you're looking for in this request so the summarizer can accurately capture it."
+          },
+          "includeTests" : {
+            "type" : "boolean",
+            "description" : "Include call sites in test files in results."
+          }
+        },
+        "required" : [ "symbols", "reasoning", "includeTests" ]
+      }
+    }
+  }, {
+    "type" : "function",
+    "function" : {
+      "name" : "getSymbolLocations",
+      "description" : "Returns the file paths (relative to the project root) where the specified symbols are defined.\nUse this to locate where interesting symbols live,\nthen use getFileSummaries to get an overview of those files.\nAccepts all symbol types: classes, methods, fields, and modules.\n",
+      "parameters" : {
+        "type" : "object",
+        "properties" : {
+          "symbols" : {
+            "type" : "array",
+            "description" : "Fully qualified symbol names to locate (classes, methods, fields, or modules)",
+            "items" : {
+              "type" : "string"
+            }
+          }
+        },
+        "required" : [ "symbols" ]
+      }
+    }
+  }, {
+    "type" : "function",
+    "function" : {
+      "name" : "skimDirectory",
+      "description" : "Returns a hierarchical \"bag of identifiers\" summary for all files within a specified directory.\nThis provides a quick overview of class members and nested structures by listing names only;\nit is significantly less detailed than getFileSummaries as it omits full signatures and field types.\nSubdirectories are listed at the top.\nIf the summary of all files is too large, it returns only the file and directory names.\n",
+      "parameters" : {
+        "type" : "object",
+        "properties" : {
+          "directoryPath" : {
+            "type" : "string",
+            "description" : "Directory path relative to the project root (e.g., '.', 'src/main/java')."
+          },
+          "reasoning" : {
+            "type" : "string",
+            "description" : "Explanation of what you're looking for in this request so the summarizer can accurately capture it."
+          }
+        },
+        "required" : [ "directoryPath", "reasoning" ]
+      }
+    }
+  }, {
+    "type" : "function",
+    "function" : {
+      "name" : "addClassesToWorkspace",
+      "description" : "Add classes to the Workspace by their fully qualified names. This adds read-only code fragments for those classes. Only call when you have identified specific class names.",
+      "parameters" : {
+        "type" : "object",
+        "properties" : {
+          "classNames" : {
+            "type" : "array",
+            "description" : "List of fully qualified class names (e.g., ['com.example.MyClass', 'org.another.Util']). Must not be empty.",
+            "items" : {
+              "type" : "string"
+            }
+          }
+        },
+        "required" : [ "classNames" ]
+      }
+    }
+  }, {
+    "type" : "function",
+    "function" : {
+      "name" : "addClassSummariesToWorkspace",
+      "description" : "Retrieves summaries (fields and method signatures) for specified classes and adds them to the Workspace.\nFaster and more efficient than reading entire files or classes when you just need the API and not the full source code.\nOnly call when you have identified specific class names.\")\n",
+      "parameters" : {
+        "type" : "object",
+        "properties" : {
+          "classNames" : {
+            "type" : "array",
+            "description" : "List of fully qualified class names (e.g., ['com.example.ClassA', 'org.another.ClassB']) to get summaries for. Must not be empty.",
+            "items" : {
+              "type" : "string"
+            }
+          }
+        },
+        "required" : [ "classNames" ]
+      }
+    }
+  }, {
+    "type" : "function",
+    "function" : {
+      "name" : "addMethodsToWorkspace",
+      "description" : "Retrieves the full source code of specific methods or functions and adds to the Workspace each as a separate read-only text fragment.\nFaster and more efficient than including entire files or classes when you only need a few methods.\n",
+      "parameters" : {
+        "type" : "object",
+        "properties" : {
+          "methodNames" : {
+            "type" : "array",
+            "description" : "List of fully qualified method names (e.g., ['com.example.ClassA.method1', 'org.another.ClassB.processData']) to retrieve sources for. Must not be empty. Must not include parameters (I will process all overloads).",
+            "items" : {
+              "type" : "string"
+            }
+          }
+        },
+        "required" : [ "methodNames" ]
+      }
+    }
+  }, {
+    "type" : "function",
+    "function" : {
+      "name" : "addFileSummariesToWorkspace",
+      "description" : "Retrieves summaries (class fields, method and top-level function signatures) of top-level symbols defined within specified project files and adds them to the Workspace.\nSupports glob patterns: '*' matches files in a single directory, '**' matches files recursively.\nFaster and more efficient than reading entire files when you just need the API definitions.\n(But if you don't know where what you want is located, you should use Search Agent instead.)\n",
+      "parameters" : {
+        "type" : "object",
+        "properties" : {
+          "filePaths" : {
+            "type" : "array",
+            "description" : "List of file paths relative to the project root. Supports glob patterns (* for single directory, ** for recursive). E.g., ['src/main/java/com/example/util/*.java', 'tests/foo/**.py']. Must not be empty.",
+            "items" : {
+              "type" : "string"
+            }
+          }
+        },
+        "required" : [ "filePaths" ]
+      }
+    }
+  }, {
+    "type" : "function",
+    "function" : {
+      "name" : "findFilesContaining",
+      "description" : "Returns file names (paths relative to the project root) whose text contents match Java regular expression patterns.\nThis is slower than searchSymbols but can find references to external dependencies and comment strings.\n",
+      "parameters" : {
+        "type" : "object",
+        "properties" : {
+          "patterns" : {
+            "type" : "array",
+            "description" : "Java-style regex patterns to search for within file contents. Unlike searchSymbols this does not automatically include any implicit anchors or case insensitivity.",
+            "items" : {
+              "type" : "string"
+            }
+          },
+          "reasoning" : {
+            "type" : "string",
+            "description" : "Explanation of what you're looking for in this request so the summarizer can accurately capture it."
+          }
+        },
+        "required" : [ "patterns", "reasoning" ]
+      }
+    }
+  }, {
+    "type" : "function",
+    "function" : {
+      "name" : "findFilenames",
+      "description" : "Returns filenames (relative to the project root) that match the given Java regular expression patterns.\nUse this to find configuration files, test data, or source files when you know part of their name.\n",
+      "parameters" : {
+        "type" : "object",
+        "properties" : {
+          "patterns" : {
+            "type" : "array",
+            "description" : "Java-style regex patterns to match against filenames.",
+            "items" : {
+              "type" : "string"
+            }
+          },
+          "reasoning" : {
+            "type" : "string",
+            "description" : "Explanation of what you're looking for in this request so the summarizer can accurately capture it."
+          }
+        },
+        "required" : [ "patterns", "reasoning" ]
+      }
+    }
+  }, {
+    "type" : "function",
+    "function" : {
+      "name" : "searchFileContents",
+      "description" : "Searches for a regex pattern within file contents across files matching a glob pattern.\nProvides grep-like output with line numbers and optional context lines.\n",
+      "parameters" : {
+        "type" : "object",
+        "properties" : {
+          "pattern" : {
+            "type" : "string",
+            "description" : "Java-style regex pattern to search for."
+          },
+          "filepath" : {
+            "type" : "string",
+            "description" : "Glob pattern for file paths (e.g., '**/AGENTS.md', 'src/**/*.java')."
+          },
+          "contextLines" : {
+            "type" : "integer",
+            "description" : "Number of context lines to show around each match (0-50)."
+          }
+        },
+        "required" : [ "pattern", "filepath", "contextLines" ]
+      }
+    }
+  }, {
+    "type" : "function",
+    "function" : {
+      "name" : "addFilesToWorkspace",
+      "description" : "Edit project files to the Workspace. Use this when Code Agent will need to make changes to these files, or if you need to read the full source. Only call when you have identified specific filenames. DO NOT call this to create new files -- Code Agent can do that without extra steps.",
+      "parameters" : {
+        "type" : "object",
+        "properties" : {
+          "relativePaths" : {
+            "type" : "array",
+            "description" : "List of file paths relative to the project root (e.g., 'src/main/java/com/example/MyClass.java'). Must not be empty.",
+            "items" : {
+              "type" : "string"
+            }
+          }
+        },
+        "required" : [ "relativePaths" ]
+      }
+    }
+  }, {
+    "type" : "function",
+    "function" : {
+      "name" : "addUrlContentsToWorkspace",
+      "description" : "Fetch content from a URL (e.g., documentation, issue tracker) and add it to the Workspace as a read-only text fragment. HTML content will be converted to Markdown.",
+      "parameters" : {
+        "type" : "object",
+        "properties" : {
+          "urlString" : {
+            "type" : "string",
+            "description" : "The full URL to fetch content from (e.g., 'https://example.com/docs/page')."
+          }
+        },
+        "required" : [ "urlString" ]
+      }
+    }
+  }, {
+    "type" : "function",
+    "function" : {
+      "name" : "searchGitCommitMessages",
+      "description" : "Search git commit messages using a Java regular expression.\nReturns matching commits with their message and list of changed files.\nIf the list of files is extremely long, it will be summarized with respect to your explanation.\n",
+      "parameters" : {
+        "type" : "object",
+        "properties" : {
+          "pattern" : {
+            "type" : "string",
+            "description" : "Java-style regex pattern to search for within commit messages."
+          },
+          "reasoning" : {
+            "type" : "string",
+            "description" : "Explanation of what you're looking for in this request so the summarizer can accurately capture it."
+          }
+        },
+        "required" : [ "pattern", "reasoning" ]
+      }
+    }
+  }, {
+    "type" : "function",
+    "function" : {
+      "name" : "getGitLog",
+      "description" : "Retrieves the git commit log for a file or directory path, showing the history of changes.\nProvides short commit hash, author, date, commit message, and file list for each entry.\nTracks file renames to help follow code evolution across different filenames.\nUse an empty path to get the repository-wide commit log.\n",
+      "parameters" : {
+        "type" : "object",
+        "properties" : {
+          "path" : {
+            "type" : "string",
+            "description" : "File or directory path relative to the project root. Use empty string for repository-wide log."
+          },
+          "limit" : {
+            "type" : "integer",
+            "description" : "Maximum number of log entries to return (capped at 100)."
+          },
+          "reasoning" : {
+            "type" : "string",
+            "description" : "Explanation of what you're looking for in this request so the summarizer can accurately capture it."
+          }
+        },
+        "required" : [ "path", "limit", "reasoning" ]
+      }
+    }
+  }, {
+    "type" : "function",
+    "function" : {
+      "name" : "explainCommit",
+      "description" : "Explain a single commit by summarizing its diff vs its parent. Use this to understand intent behind changes.",
+      "parameters" : {
+        "type" : "object",
+        "properties" : {
+          "revision" : {
+            "type" : "string",
+            "description" : "Commit id (or revision)"
+          },
+          "reasoning" : {
+            "type" : "string",
+            "description" : "Why you need this explanation (optional)."
+          }
+        },
+        "required" : [ "revision", "reasoning" ]
+      }
+    }
+  }, {
+    "type" : "function",
+    "function" : {
+      "name" : "jq",
+      "description" : "Executes a jq filter against JSON files using jackson-jq.\nResults are always returned as compact JSON strings.\nMultiple results are separated by newlines.\n",
+      "parameters" : {
+        "type" : "object",
+        "properties" : {
+          "filepath" : {
+            "type" : "string",
+            "description" : "File path or glob pattern (e.g., 'package.json', '**/data/*.json')."
+          },
+          "filter" : {
+            "type" : "string",
+            "description" : "jq filter to apply."
+          }
+        },
+        "required" : [ "filepath", "filter" ]
+      }
+    }
+  }, {
+    "type" : "function",
+    "function" : {
+      "name" : "dropWorkspaceFragments",
+      "description" : "Remove specified fragments (files, text snippets, task history, analysis results) from the Workspace and record structured breadcrumbs (keyFacts + dropReason) in DISCARDED_CONTEXT. Do not drop file fragments that you still need to read or edit.",
+      "parameters" : {
+        "type" : "object",
+        "properties" : {
+          "fragments" : {
+            "type" : "array",
+            "description" : "List of fragments to remove from the Workspace. Must not be empty. Pinned fragments are ineligible.",
+            "items" : {
+              "type" : "object",
+              "properties" : {
+                "fragmentId" : {
+                  "type" : "string",
+                  "description" : "The alphanumeric ID exactly as listed in <workspace_toc>"
+                },
+                "keyFacts" : {
+                  "type" : "string",
+                  "description" : "Key facts to retain: file paths, class/method names, constraints, notable behavior. Use 'No relevant facts' if nothing worth preserving. Describe what IS, not what SHOULD BE. No action items for the Code Agent."
+                },
+                "dropReason" : {
+                  "type" : "string",
+                  "description" : "One short sentence: why is it safe to drop this fragment?"
+                }
+              },
+              "required" : [ "fragmentId", "keyFacts", "dropReason" ]
+            }
+          }
+        },
+        "required" : [ "fragments" ]
+      }
+    }
+  }, {
+    "type" : "function",
+    "function" : {
+      "name" : "importDependency",
+      "description" : "Import a dependency into Code Intelligence. Automatically detects the language based on the project. For Java: use Maven coordinates like 'com.google.guava:guava:32.1.2-jre'. For Python: use package name like 'requests' or 'numpy 2.0.0'. For Rust: use crate name like 'serde' or 'tokio 1.0'. For Node.js: use package name like 'lodash' or '@types/node'.",
+      "parameters" : {
+        "type" : "object",
+        "properties" : {
+          "dependencySpec" : {
+            "type" : "string",
+            "description" : "Dependency specification. Format depends on language: Java='groupId:artifactId:version', Python='package [version]', Rust='crate [version]', Node.js='package'"
+          }
+        },
+        "required" : [ "dependencySpec" ]
+      }
+    }
+  }, {
+    "type" : "function",
+    "function" : {
+      "name" : "answer",
+      "description" : "Provide a final answer to a purely informational request. Use this when no code changes are required.",
+      "parameters" : {
+        "type" : "object",
+        "properties" : {
+          "explanation" : {
+            "type" : "string",
+            "description" : "Comprehensive explanation that answers the query. Include relevant code snippets and how they relate, formatted in Markdown."
+          }
+        },
+        "required" : [ "explanation" ]
+      }
+    }
+  }, {
+    "type" : "function",
+    "function" : {
+      "name" : "createOrReplaceTaskList",
+      "description" : "Replace the entire task list with the provided tasks. Completed tasks from the previous list are implicitly dropped. Use this when you want to create a fresh task list or significantly revise the scope.",
+      "parameters" : {
+        "type" : "object",
+        "properties" : {
+          "explanation" : {
+            "type" : "string",
+            "description" : "Explanation of the problem and a high-level but comprehensive overview of the solution proposed in the tasks, formatted in Markdown. Include touch points for files, classes, and tests."
+          },
+          "tasks" : {
+            "type" : "array",
+            "description" : "Produce an ordered list of coding tasks that are each 'right-sized': small enough to complete in one sitting, yet large enough to be meaningful.\n\nRequirements (apply to EACH task):\n- Scope: one coherent goal; avoid multi-goal items joined by 'and/then'.\n- Size target: ~2 hours for an experienced contributor across < 10 files.\n- Tests: prefer adding or updating automated tests (unit/integration) to prove the behavior;\n  if automation is not a good fit, you may omit tests rather than prescribe manual steps. Tests should\n  be completed as part of each task, not bolted on separately at the end.\n- Independence: runnable/reviewable on its own; at most one explicit dependency on a previous task.\n- Flexibility: the executing agent may adjust scope and ordering based on more up-to-date context discovered during implementation.\n- Incremental additions: when adding a task to an existing list, copy all existing incomplete tasks verbatim (preserving their exact wording and order) and insert the new task at the appropriate position based on dependencies.\n\nRubric for slicing:\n- TOO LARGE if it spans multiple subsystems, sweeping refactors, or ambiguous outcomes - split by subsystem or by 'behavior change' vs 'refactor'.\n- TOO SMALL if it lacks a distinct, reviewable outcome (or test) - merge into its nearest parent goal.\n- JUST RIGHT if the diff + test could be reviewed and landed as a single commit without coordination.\n\nAim for 8 tasks or fewer. Do not include \"external\" tasks like PRDs or manual testing.\n`tasks` is a List<TaskListEntry> - if you have N tasks, output N list elements.\n",
+            "items" : {
+              "type" : "object",
+              "properties" : {
+                "title" : {
+                  "type" : "string",
+                  "description" : "Short display title for the task."
+                },
+                "instructions" : {
+                  "type" : "string",
+                  "description" : "The full task description (Markdown encouraged)."
+                },
+                "acceptance" : {
+                  "type" : "string",
+                  "description" : "How to verify success. Optional for purely mechanical refactors with no behavior change. Wherever possible, include automated tests in Acceptance; if automation is not a good fit, it is acceptable to omit tests rather than prescribe manual steps."
+                },
+                "keyLocations" : {
+                  "type" : "string",
+                  "description" : "Files and fully qualified method/class names important to implement the task."
+                },
+                "keyDiscoveries" : {
+                  "type" : "string",
+                  "description" : "Useful discoveries from OUTSIDE the key locations that the Code Agent should know to load into his Workspace."
+                }
+              },
+              "required" : [ "title", "instructions", "acceptance", "keyLocations", "keyDiscoveries" ]
+            }
+          }
+        },
+        "required" : [ "explanation", "tasks" ]
+      }
+    }
+  }, {
+    "type" : "function",
+    "function" : {
+      "name" : "callCodeAgent",
+      "description" : "Invoke the Code Agent to implement the current goal in a single shot using your provided instructions. Provide complete, self-contained instructions; only the Workspace and your instructions are visible to the Code Agent.",
+      "parameters" : {
+        "type" : "object",
+        "properties" : {
+          "instructions" : {
+            "type" : "string",
+            "description" : "Detailed instructions for the CodeAgent, referencing the current project and Workspace."
+          }
+        },
+        "required" : [ "instructions" ]
+      }
+    }
+  }, {
+    "type" : "function",
+    "function" : {
+      "name" : "askForClarification",
+      "description" : "Ask the human for clarification when the goal is unclear or necessary information cannot be found. Outputs the provided question to the user and stops.",
+      "parameters" : {
+        "type" : "object",
+        "properties" : {
+          "queryForUser" : {
+            "type" : "string",
+            "description" : "A concise question or clarification request for the human user."
+          }
+        },
+        "required" : [ "queryForUser" ]
+      }
+    }
+  }, {
+    "type" : "function",
+    "function" : {
+      "name" : "abortSearch",
+      "description" : "Abort when you determine the question is not answerable from this codebase or is out of scope.",
+      "parameters" : {
+        "type" : "object",
+        "properties" : {
+          "explanation" : {
+            "type" : "string",
+            "description" : "Clear explanation of why the question cannot be answered from this codebase."
+          }
+        },
+        "required" : [ "explanation" ]
+      }
+    }
+  } ],
+  "tool_choice" : "required",
+  "parallel_tool_calls" : true,
+  "reasoning_effort" : "disable",
+  "prompt_cache_key" : "gemini-3-pro-preview237f4ef9-3a42-4850-a635-615fca689856"
+}

@@ -22,13 +22,13 @@ export const useTikTokData = () => {
     const fetchSettings = useCallback(async () => {
         try {
             // Fetch health/credentials too
-            const healthRes = await fetch('http://127.0.0.1:8001/api/health');
+            const healthRes = await fetch('/api/health');
             if (healthRes.ok) {
                 const healthData = await healthRes.json();
                 setCredentialsFound(healthData.credentials_found);
             }
 
-            const response = await fetch('http://127.0.0.1:8001/api/settings');
+            const response = await fetch('/api/settings');
             if (response.ok) {
                 const data = await response.json();
                 setSheetUrl(data.sheet_url || '');
@@ -42,8 +42,8 @@ export const useTikTokData = () => {
 
     const updateSettings = async (url: string, token?: string) => {
         try {
-            console.log("Saving settings to 127.0.0.1:8001...", { url, token });
-            const response = await fetch('http://127.0.0.1:8001/api/settings', {
+            console.log("Saving settings...", { url, token });
+            const response = await fetch('/api/settings', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ sheet_url: url, apify_token: token || apifyToken })
@@ -67,7 +67,7 @@ export const useTikTokData = () => {
 
     const addGroup = async (name: string, keywords: string[], exclude_keywords: string[] = [], exact_match: boolean = false) => {
         try {
-            const response = await fetch('http://127.0.0.1:8001/api/groups', {
+            const response = await fetch('/api/groups', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name, keywords, exclude_keywords, exact_match })
@@ -84,7 +84,7 @@ export const useTikTokData = () => {
 
     const deleteGroup = async (name: string) => {
         try {
-            const response = await fetch(`http://127.0.0.1:8001/api/groups/${name}`, {
+            const response = await fetch(`/api/groups/${name}`, {
                 method: 'DELETE'
             });
             if (response.ok) {
@@ -104,7 +104,7 @@ export const useTikTokData = () => {
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
-            const response = await fetch('http://127.0.0.1:8001/api/data');
+            const response = await fetch('/api/data');
             if (!response.ok) throw new Error("API Offline");
 
             setApiConnected(true);
@@ -233,7 +233,7 @@ export const useTikTokData = () => {
                 setScrapingProgress(prev => (prev < 95 ? prev + (95 - prev) * 0.1 : prev));
             }, 1500);
 
-            const response = await fetch('http://127.0.0.1:8001/api/scrape', {
+            const response = await fetch('/api/scrape', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

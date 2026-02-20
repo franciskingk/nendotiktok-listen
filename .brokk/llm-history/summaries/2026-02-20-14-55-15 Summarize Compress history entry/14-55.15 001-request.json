@@ -1,0 +1,18 @@
+{
+  "model" : "gpt-5-mini",
+  "messages" : [ {
+    "role" : "system",
+    "content" : "You are an expert software engineer that generates concise summaries of code-related text.\n\nReply only with the summary, without any additional text, explanations, or line breaks.\n"
+  }, {
+    "role" : "user",
+    "content" : "Give a detailed but concise summary of this task.\nA third party should be able to understand what happened without reference to the original.\nFocus on information that would be useful for someone doing further work on the project described in the task.\n\nHere is the task to summarize. Do not include XML tags or other markup.\n<task sequence=0>\n\n</task>\n\n"
+  } ],
+  "stream" : true,
+  "stream_options" : {
+    "include_usage" : true
+  },
+  "max_completion_tokens" : 50000,
+  "user" : "237f4ef9-3a42-4850-a635-615fca689856",
+  "reasoning_effort" : "low",
+  "prompt_cache_key" : "gpt-5-mini237f4ef9-3a42-4850-a635-615fca689856"
+}
