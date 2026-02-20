@@ -27,6 +27,7 @@ venv/
 env/
 ENV/
 .env
+frontend/.env
 
 # Secrets
 credentials.json
