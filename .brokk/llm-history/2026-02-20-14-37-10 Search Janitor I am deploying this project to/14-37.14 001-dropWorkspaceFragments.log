@@ -1,0 +1,865 @@
+# Request to gemini-3-flash-preview:
+
+<message type=system>
+  <instructions>
+  You are the Janitor Agent (Workspace Reviewer). Single-shot cleanup: one response, then done.
+  
+  Scope:
+  - Workspace curation ONLY. No code, no answers, no plans.
+  
+  Curation guidelines:
+  - KEEP any fragment that contains logic, UI components, or utility methods
+    related to the search goal.
+  - DROP if the fragment is irrelevant OR if a concise summary provides
+    100% of the value with 0% information loss.
+  
+  Tools (call exactly one):
+  - performedInitialReview(): Signals that ALL unpinned fragments are relevant to the search goal.
+  - dropWorkspaceFragments(fragments: {fragmentId, keyFacts, dropReason}[]): batch ALL drops in a single call.
+    Include ONLY the irrelevant fragments to drop in this call.
+  
+  drop explanation format:
+      keyFacts: Key facts to retain: file paths, class/method names, constraints, notable behavior. Use 'No relevant facts' if nothing worth preserving. Describe what IS, not what SHOULD BE. No action items for the Code Agent.
+      dropReason: One short sentence: why is it safe to drop this fragment?
+  
+  Response rules:
+  - Tool call only; return exactly ONE tool call (performedInitialReview OR a single batched dropWorkspaceFragments).
+  - Don't give up: if the number of irrelevant fragments is overwhelming, do your best. It's okay to not get everything, but it's not okay to call performedInitialReview without trying to clean up.
+  </instructions>
+</message>
+
+<message type=user>
+  <workspace>
+  [Image content provided out of band]
+  
+  <fragment description="frontend\src\App.tsx">
+  import { Toaster } from "@/components/ui/toaster";
+  import { Toaster as Sonner } from "@/components/ui/sonner";
+  import { TooltipProvider } from "@/components/ui/tooltip";
+  import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+  import { BrowserRouter, Routes, Route } from "react-router-dom";
+  import Index from "./pages/Index";
+  import NotFound from "./pages/NotFound";
+  
+  const queryClient = new QueryClient();
+  
+  const App = () => (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<Index />} />
+            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </QueryClientProvider>
+  );
+  
+  export default App;
+  
+  </fragment>
+  
+  
+  <fragment description="frontend\src\main.tsx">
+  import { createRoot } from "react-dom/client";
+  import App from "./App.tsx";
+  import "./index.css";
+  
+  createRoot(document.getElementById("root")!).render(<App />);
+  
+  </fragment>
+  
+  
+  <fragment description="frontend\README.md">
+  # Nendo TikTok Bot - Frontend
+  
+  This is the curated React frontend for the Nendo TikTok Intelligence Platform.
+  
+  ## 🚀 Getting Started
+  
+  ### Prerequisites
+  - Node.js (v18+)
+  - npm or bun
+  
+  ### Installation
+  1. Navigate to the frontend directory:
+     ```bash
+     cd frontend
+     ```
+  2. Install dependencies:
+     ```bash
+     npm install
+     ```
+  3. Start the development server:
+     ```bash
+     npm run dev
+     ```
+  
+  ## 🛠️ Tech Stack
+  - **Vite**: Next-generation frontend tooling
+  - **TypeScript**: Static typing for JavaScript
+  - **React**: UI library
+  - **Shadcn UI**: Beautifully designed components
+  - **Tailwind CSS**: Utility-first CSS framework
+  - **Recharts**: Composant charting library
+  - **Lucide React**: Clean icons
+  
+  ## 📊 Features
+  - Live scraping controls
+  - Interactive sentiment pie charts
+  - Engagement timeline with activity peaks
+  - Detailed content log with direct TikTok links
+  - Filterable video gallery
+  
+  ## 🌐 Deployment
+  This project is configured for deployment on **Vercel**. Simply connect your GitHub repository and ensure the build settings are:
+  - **Build Command**: `npm run build`
+  - **Output Directory**: `dist`
+  - **Root Directory**: `frontend`
+  
+  </fragment>
+  
+  
+  <fragment description="api.py">
+  from fastapi import FastAPI, HTTPException, Request
+  from fastapi.middleware.cors import CORSMiddleware
+  from pydantic import BaseModel
+  from typing import Optional, List, Dict, Any
+  import os
+  import json
+  from datetime import datetime
+  import pandas as pd
+  import asyncio
+  
+  # Import existing modules
+  from scraper import scrape_hashtag_sync, scrape_user_sync, scrape_search_sync
+  from analysis import TikTokAnalyzer
+  from sheets import SheetsManager
+  
+  app = FastAPI(title="TikTok Pulse API")
+  
+  # Configure CORS
+  app.add_middleware(
+      CORSMiddleware,
+      allow_origins=["*"],  # In production, specify the actual frontend URL
+      allow_credentials=True,
+      allow_methods=["*"],
+      allow_headers=["*"],
+  )
+  
+  # Initialize Analyzer
+  analyzer = TikTokAnalyzer()
+  
+  CONFIG_FILE = "config.json"
+  DATA_CACHE = "data_cache.json"
+  
+  def load_local_data():
+      if os.path.exists(DATA_CACHE):
+          try:
+              with open(DATA_CACHE, "r") as f:
+                  return json.load(f)
+          except:
+              pass
+      return {"videos": [], "comments": []}
+  
+  def save_local_data(data):
+      # Load existing to avoid overwriting all
+      existing = load_local_data()
+      
+      # Merge videos (deduplicate by video_id)
+      video_ids = {v['video_id'] for v in existing['videos']}
+      for v in data.get('videos', []):
+          if str(v['video_id']) not in video_ids:
+              existing['videos'].append(v)
+              video_ids.add(str(v['video_id']))
+              
+      # Merge comments (deduplicate by comment_id)
+      comment_ids = {c['comment_id'] for c in existing['comments']}
+      for c in data.get('comments', []):
+          if str(c['comment_id']) not in comment_ids:
+              existing['comments'].append(c)
+              comment_ids.add(str(c['comment_id']))
+              
+      with open(DATA_CACHE, "w") as f:
+          json.dump(existing, f)
+  
+  def load_config():
+      if os.path.exists(CONFIG_FILE):
+          try:
+              with open(CONFIG_FILE, "r") as f:
+                  config = json.load(f)
+                  if "groups" not in config:
+                      config["groups"] = []
+                  return config
+          except:
+              pass
+      return {"sheet_url": "", "apify_token": "", "groups": []}
+  
+  def save_config(config):
+      with open(CONFIG_FILE, "w") as f:
+          json.dump(config, f)
+  
+  class SettingsRequest(BaseModel):
+      sheet_url: str
+      apify_token: Optional[str] = None
+  
+  class KeywordGroup(BaseModel):
+      name: str
+      keywords: List[str]
+      exclude_keywords: List[str] = []
+      exact_match: bool = False
+  
+  @app.get("/api/settings")
+  def get_settings():
+      return load_config()
+  
+  @app.post("/api/settings")
+  def update_settings(request: SettingsRequest):
+      try:
+          config = load_config()
+          config["sheet_url"] = request.sheet_url
+          if request.apify_token is not None:
+              config["apify_token"] = request.apify_token
+          save_config(config)
+          print(f"DEBUG: Saved config: {config}")
+          return {"success": True, "config": config}
+      except Exception as e:
+          print(f"DEBUG ERROR: {e}")
+          raise HTTPException(status_code=500, detail=str(e))
+  
+  @app.post("/api/groups")
+  def add_group(group: KeywordGroup):
+      config = load_config()
+      # Remove existing group with same name if exists
+      config["groups"] = [g for g in config["groups"] if g["name"] != group.name]
+      config["groups"].append(group.dict())
+      save_config(config)
+      return {"success": True, "groups": config["groups"]}
+  
+  @app.delete("/api/groups/{name}")
+  def delete_group(name: str):
+      config = load_config()
+      config["groups"] = [g for g in config["groups"] if g["name"] != name]
+      save_config(config)
+      return {"success": True, "groups": config["groups"]}
+  
+  class ScrapeRequest(BaseModel):
+      scrape_type: str  # "Hashtag", "Username", "Keyword"
+      search_input: str
+      video_count: Optional[int] = 50
+      since_date: Optional[str] = None
+      apify_token: str
+      scrape_comments: bool = False
+      comments_limit: Optional[int] = 0
+  
+  @app.get("/api/health")
+  def health_check():
+      return {
+          "status": "healthy", 
+          "timestamp": datetime.now().isoformat(),
+          "credentials_found": os.path.exists("credentials.json")
+      }
+  
+  @app.get("/api/data")
+  async def get_data():
+      try:
+          config = load_config()
+          local_data = load_local_data()
+          
+          videos = local_data.get("videos", [])
+          comments = local_data.get("comments", [])
+          
+          sheet_url = config.get("sheet_url")
+          manager = SheetsManager(sheet_url=sheet_url if sheet_url else None)
+          
+          if manager.connect():
+              df_videos = manager.get_all_data()
+              df_comments = manager.get_all_comments()
+              
+              if not df_videos.empty:
+                  # Merge Sheets data into the list, avoiding duplicates from local cache
+                  sheet_videos = df_videos.to_dict(orient='records')
+                  local_ids = {str(v['video_id']) for v in videos}
+                  for v in sheet_videos:
+                      if str(v['video_id']) not in local_ids:
+                          videos.append(v)
+              
+              if not df_comments.empty:
+                  sheet_comments = df_comments.to_dict(orient='records')
+                  local_c_ids = {str(c['comment_id']) for c in comments}
+                  for c in sheet_comments:
+                      if str(c['comment_id']) not in local_c_ids:
+                          comments.append(c)
+  
+          # Convert list to DataFrame for analysis
+          df_videos = pd.DataFrame(videos)
+          df_comments = pd.DataFrame(comments)
+          
+          if not df_videos.empty:
+              df_videos = analyzer.calculate_engagement_rate(df_videos)
+              df_videos = analyzer.add_sentiment_analysis(df_videos, method='vader')
+              if 'publish_date' in df_videos.columns:
+                  df_videos['publish_date'] = pd.to_datetime(df_videos['publish_date']).dt.strftime('%Y-%m-%d %H:%M:%S')
+              if 'timestamp' in df_videos.columns:
+                  df_videos['timestamp'] = pd.to_datetime(df_videos['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
+          
+          if not df_comments.empty:
+              df_comments = analyzer.add_sentiment_analysis(df_comments, method='vader', text_column='text')
+              if 'date' in df_comments.columns:
+                  df_comments['date'] = pd.to_datetime(df_comments['date']).dt.strftime('%Y-%m-%d %H:%M:%S')
+              if 'scraped_at' in df_comments.columns:
+                  df_comments['scraped_at'] = pd.to_datetime(df_comments['scraped_at']).dt.strftime('%Y-%m-%d %H:%M:%S')
+  
+          return {
+              "videos": df_videos.to_dict(orient='records') if not df_videos.empty else [],
+              "comments": df_comments.to_dict(orient='records') if not df_comments.empty else [],
+              "credentials_found": os.path.exists("credentials.json")
+          }
+      except Exception as e:
+          print(f"API Data Error: {e}")
+          return {"videos": [], "comments": [], "error": str(e)}
+  
+  @app.post("/api/scrape")
+  async def run_scrape(request: ScrapeRequest):
+      try:
+          config = load_config()
+          since_dt = None
+          if request.since_date:
+              try:
+                  since_dt = datetime.fromisoformat(request.since_date)
+              except:
+                  pass
+  
+          results = []
+          loop = asyncio.get_event_loop()
+          
+          if request.scrape_type == "Hashtag":
+              results = await loop.run_in_executor(None, scrape_hashtag_sync, 
+                          request.search_input, request.video_count, since_dt, request.apify_token, request.comments_limit if request.scrape_comments else 0)
+          elif request.scrape_type == "Username":
+              results = await loop.run_in_executor(None, scrape_user_sync, 
+                          request.search_input, request.video_count, since_dt, request.apify_token, request.comments_limit if request.scrape_comments else 0)
+          else: # Keyword
+              results = await loop.run_in_executor(None, scrape_search_sync, 
+                          request.search_input, request.video_count, since_dt, request.apify_token, request.comments_limit if request.scrape_comments else 0)
+          
+          if results:
+              all_comments = []
+              for video in results:
+                  if 'scraped_comments' in video:
+                      all_comments.extend(video['scraped_comments'])
+                      del video['scraped_comments']
+              
+              # Save to local cache regardless of Sheets status
+              save_local_data({"videos": results, "comments": all_comments})
+              
+              # Try to save to Sheets if connected
+              manager = SheetsManager(sheet_url=config.get("sheet_url") if config.get("sheet_url") else None)
+              if manager.connect():
+                  manager.append_data(results)
+                  if all_comments:
+                      manager.append_comments(all_comments)
+              
+              return {
+                  "success": True, 
+                  "video_count": len(results), 
+                  "comment_count": len(all_comments)
+              }
+          else:
+              return {"success": False, "error": "No results found"}
+              
+      except Exception as e:
+          raise HTTPException(status_code=500, detail=str(e))
+  
+  if __name__ == "__main__":
+      import uvicorn
+      uvicorn.run(app, host="0.0.0.0", port=8001)
+  
+  </fragment>
+  
+  
+  <fragment description="frontend\package.json">
+  {
+    "name": "vite_react_shadcn_ts",
+    "private": true,
+    "version": "0.0.0",
+    "type": "module",
+    "scripts": {
+      "dev": "vite",
+      "build": "vite build",
+      "build:dev": "vite build --mode development",
+      "lint": "eslint .",
+      "preview": "vite preview",
+      "test": "vitest run",
+      "test:watch": "vitest"
+    },
+    "dependencies": {
+      "@hookform/resolvers": "^3.10.0",
+      "@radix-ui/react-accordion": "^1.2.11",
+      "@radix-ui/react-alert-dialog": "^1.1.14",
+      "@radix-ui/react-aspect-ratio": "^1.1.7",
+      "@radix-ui/react-avatar": "^1.1.10",
+      "@radix-ui/react-checkbox": "^1.3.2",
+      "@radix-ui/react-collapsible": "^1.1.11",
+      "@radix-ui/react-context-menu": "^2.2.15",
+      "@radix-ui/react-dialog": "^1.1.14",
+      "@radix-ui/react-dropdown-menu": "^2.1.15",
+      "@radix-ui/react-hover-card": "^1.1.14",
+      "@radix-ui/react-label": "^2.1.7",
+      "@radix-ui/react-menubar": "^1.1.15",
+      "@radix-ui/react-navigation-menu": "^1.2.13",
+      "@radix-ui/react-popover": "^1.1.14",
+      "@radix-ui/react-progress": "^1.1.7",
+      "@radix-ui/react-radio-group": "^1.3.7",
+      "@radix-ui/react-scroll-area": "^1.2.9",
+      "@radix-ui/react-select": "^2.2.5",
+      "@radix-ui/react-separator": "^1.1.7",
+      "@radix-ui/react-slider": "^1.3.5",
+      "@radix-ui/react-slot": "^1.2.3",
+      "@radix-ui/react-switch": "^1.2.5",
+      "@radix-ui/react-tabs": "^1.1.12",
+      "@radix-ui/react-toast": "^1.2.14",
+      "@radix-ui/react-toggle": "^1.1.9",
+      "@radix-ui/react-toggle-group": "^1.1.10",
+      "@radix-ui/react-tooltip": "^1.2.7",
+      "@tanstack/react-query": "^5.83.0",
+      "class-variance-authority": "^0.7.1",
+      "clsx": "^2.1.1",
+      "cmdk": "^1.1.1",
+      "date-fns": "^3.6.0",
+      "embla-carousel-react": "^8.6.0",
+      "input-otp": "^1.4.2",
+      "lucide-react": "^0.462.0",
+      "next-themes": "^0.3.0",
+      "react": "^18.3.1",
+      "react-day-picker": "^8.10.1",
+      "react-dom": "^18.3.1",
+      "react-hook-form": "^7.61.1",
+      "react-resizable-panels": "^2.1.9",
+      "react-router-dom": "^6.30.1",
+      "recharts": "^2.15.4",
+      "sonner": "^1.7.4",
+      "tailwind-merge": "^2.6.0",
+      "tailwindcss-animate": "^1.0.7",
+      "vaul": "^0.9.9",
+      "zod": "^3.25.76"
+    },
+    "devDependencies": {
+      "@eslint/js": "^9.32.0",
+      "@testing-library/jest-dom": "^6.6.0",
+      "@testing-library/react": "^16.0.0",
+      "@tailwindcss/typography": "^0.5.16",
+      "@types/node": "^22.16.5",
+      "@types/react": "^18.3.23",
+      "@types/react-dom": "^18.3.7",
+      "@vitejs/plugin-react-swc": "^3.11.0",
+      "autoprefixer": "^10.4.21",
+      "eslint": "^9.32.0",
+      "eslint-plugin-react-hooks": "^5.2.0",
+      "eslint-plugin-react-refresh": "^0.4.20",
+      "globals": "^15.15.0",
+      "jsdom": "^20.0.3",
+      "postcss": "^8.5.6",
+      "tailwindcss": "^3.4.17",
+      "typescript": "^5.8.3",
+      "typescript-eslint": "^8.38.0",
+      "vite": "^5.4.19",
+      "vitest": "^3.2.4"
+    }
+  }
+  </fragment>
+  
+  
+  <fragment description="frontend\vite.config.ts">
+  import { defineConfig } from "vite";
+  import react from "@vitejs/plugin-react-swc";
+  import path from "path";
+  
+  // https://vitejs.dev/config/
+  export default defineConfig(({ mode }) => ({
+    server: {
+      host: "::",
+      port: 8081,
+      hmr: {
+        overlay: false,
+      },
+    },
+    plugins: [react()],
+    resolve: {
+      alias: {
+        "@": path.resolve(__dirname, "./src"),
+      },
+    },
+  }));
+  
+  </fragment>
+  
+  
+  <fragment description="frontend\src\pages\NotFound.tsx">
+  import { useLocation } from "react-router-dom";
+  import { useEffect } from "react";
+  
+  const NotFound = () => {
+    const location = useLocation();
+  
+    useEffect(() => {
+      console.error("404 Error: User attempted to access non-existent route:", location.pathname);
+    }, [location.pathname]);
+  
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-muted">
+        <div className="text-center">
+          <h1 className="mb-4 text-4xl font-bold">404</h1>
+          <p className="mb-4 text-xl text-muted-foreground">Oops! Page not found</p>
+          <a href="/" className="text-primary underline hover:text-primary/90">
+            Return to Home
+          </a>
+        </div>
+      </div>
+    );
+  };
+  
+  export default NotFound;
+  
+  </fragment>
+  
+  
+  <fragment description="README.md">
+  # 📊 TikTok Social Listening & Analytics Dashboard
+  
+  A complete Python web application for scraping TikTok data and visualizing interactive analytics with sentiment analysis, engagement metrics, and trend tracking.
+  
+  ## ✨ Features
+  
+  ### 🔍 Data Scraping
+  - Scrape TikTok videos by hashtag or username
+  - Extract comprehensive video data:
+    - Video ID, URL, caption
+    - Author information
+    - Engagement metrics (likes, comments, shares, views)
+    - Publish date
+    - Hashtags and mentions
+  
+  ### 💾 Data Storage
+  - Automatic Google Sheets integration
+  - Duplicate prevention using video IDs
+  - Timestamped data entries
+  - Auto-create sheets if they don't exist
+  
+  ### 📈 Analytics
+  - **Sentiment Analysis**: TextBlob and VADER sentiment scoring
+  - **Engagement Rate**: Calculated engagement metrics
+  - **Word Frequency**: Extract trending words from captions
+  - **Time Series**: Aggregate data by hour/day/week
+  
+  ### 📊 Interactive Visualizations
+  - Views over time (line chart)
+  - Engagement metrics over time (multi-line chart)
+  - Sentiment distribution (pie chart)
+  - Top posts by engagement (bar chart)
+  - Sentiment score trends
+  - Word cloud from captions
+  - Top words and authors tables
+  
+  ### 🎨 Modern UI
+  - Clean Streamlit interface
+  - Sidebar filters for hashtag/username input
+  - Date range filtering
+  - Refresh scrape button
+  - Gradient styling and modern design
+  
+  ## 🚀 Quick Start
+  
+  ### 1. Install Dependencies
+  
+  ```bash
+  pip install -r requirements.txt
+  ```
+  
+  After installing, you need to install Playwright browsers:
+  
+  ```bash
+  playwright install
+  ```
+  
+  ### 2. Set Up Google Sheets (Optional but Recommended)
+  
+  1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+  2. Create a new project
+  3. Enable Google Sheets API and Google Drive API
+  4. Create a Service Account
+  5. Download the credentials JSON file
+  6. Rename it to `credentials.json` and place it in the project directory
+  
+  ### 3. Run the Application
+  
+  ```bash
+  streamlit run app.py
+  ```
+  
+  The dashboard will open in your browser at `http://localhost:8501`
+  
+  ## 📁 Project Structure
+  
+  ```
+  tiktok-analytics/
+  ├── app.py              # Main Streamlit dashboard
+  ├── scraper.py          # TikTok scraping module
+  ├── analysis.py         # Analytics and sentiment analysis
+  ├── sheets.py           # Google Sheets integration
+  ├── requirements.txt    # Python dependencies
+  ├── credentials.json    # Google Service Account credentials (not included)
+  └── README.md          # This file
+  ```
+  
+  ## 🎯 Usage
+  
+  ### Scraping Data
+  
+  1. **By Hashtag**:
+     - Select "Hashtag" in the sidebar
+     - Enter hashtag without # (e.g., "viral")
+     - Choose number of videos (10-100)
+     - Click "🔄 Scrape New Data"
+  
+  2. **By Username**:
+     - Select "Username" in the sidebar
+     - Enter username without @ (e.g., "username")
+     - Choose number of videos (10-100)
+     - Click "🔄 Scrape New Data"
+  
+  ### Viewing Analytics
+  
+  1. Click "📥 Load Data from Sheets" to load all stored data
+  2. Use date range filter to focus on specific time periods
+  3. Explore interactive charts and metrics
+  4. View raw data in the expandable table
+  
+  ### Key Metrics
+  
+  - **Total Videos**: Number of videos in dataset
+  - **Total Views**: Sum of all video views
+  - **Total Likes**: Sum of all likes
+  - **Avg Engagement**: Average engagement rate across all videos
+  
+  ## 🔧 Customization
+  
+  ### Change Sentiment Analysis Method
+  
+  In `app.py`, modify the sentiment analysis method:
+  
+  ```python
+  df = analyzer.add_sentiment_analysis(df, method='vader')  # or 'textblob'
+  ```
+  
+  ### Adjust Time Aggregation
+  
+  In `app.py`, change the frequency for time series:
+  
+  ```python
+  time_agg = analyzer.aggregate_by_time(df, freq='D')  # 'H' for hour, 'D' for day, 'W' for week
+  ```
+  
+  ### Customize Google Sheet Name
+  
+  In `sheets.py` or when initializing:
+  
+  ```python
+  sheets = SheetsManager(sheet_name='My Custom Sheet Name')
+  ```
+  
+  ## 📊 Analytics Explained
+  
+  ### Engagement Rate
+  ```
+  Engagement Rate = (Likes + Comments + Shares) / Views × 100
+  ```
+  
+  ### Sentiment Analysis
+  - **VADER**: Best for social media text, returns compound score (-1 to +1)
+  - **TextBlob**: General purpose, returns polarity (-1 to +1) and subjectivity (0 to 1)
+  
+  ### Sentiment Categories
+  - **Positive**: Score > 0.05
+  - **Neutral**: Score between -0.05 and 0.05
+  - **Negative**: Score < -0.05
+  
+  ## ⚠️ Important Notes
+  
+  ### TikTok API Limitations
+  - TikTok doesn't have an official public API
+  - This app uses unofficial scraping methods via TikTokApi
+  - Scraping may be rate-limited or blocked
+  - Use responsibly and respect TikTok's terms of service
+  
+  ### Google Sheets
+  - Without Google Sheets credentials, data won't persist between sessions
+  - You can still use the app for one-time analysis
+  - Data will be stored in memory only
+  
+  ### Playwright
+  - First-time setup requires installing browser binaries
+  - Run `playwright install` after pip install
+  - Requires ~300MB of disk space for browsers
+  
+  ## 🛠️ Troubleshooting
+  
+  ### "TikTok API initialization failed"
+  - Ensure Playwright is installed: `playwright install`
+  - Check your internet connection
+  - TikTok may be blocking automated access
+  
+  ### "Google Sheets not connected"
+  - Verify `credentials.json` exists in project directory
+  - Check that Google Sheets API is enabled
+  - Ensure service account has proper permissions
+  
+  ### "No data found"
+  - Try a different hashtag or username
+  - Reduce the number of videos requested
+  - Check if the account/hashtag exists on TikTok
+  
+  ## 📦 Dependencies
+  
+  - **streamlit**: Web dashboard framework
+  - **plotly**: Interactive visualizations
+  - **pandas**: Data manipulation
+  - **TikTokApi**: TikTok scraping
+  - **playwright**: Browser automation
+  - **gspread**: Google Sheets integration
+  - **textblob**: Sentiment analysis
+  - **vaderSentiment**: Social media sentiment analysis
+  - **wordcloud**: Word cloud generation
+  - **matplotlib**: Plotting library
+  
+  ## 🔮 Future Enhancements
+  
+  - [ ] Scheduled automated scraping
+  - [ ] Email/Slack notifications
+  - [ ] Competitor analysis
+  - [ ] Hashtag recommendations
+  - [ ] Export to CSV/Excel
+  - [ ] Multi-account tracking
+  - [ ] Advanced filtering options
+  - [ ] Custom date range presets
+  
+  ## 📄 License
+  
+  This project is for educational purposes. Please respect TikTok's terms of service and use responsibly.
+  
+  ## 🤝 Contributing
+  
+  Feel free to fork, modify, and submit pull requests!
+  
+  ---
+  
+  **Made with ❤️ for social media analytics**
+  
+  </fragment>
+  </workspace><project_guide>
+  ### AGENTS.md at .
+  
+  # Nendo TikTok Bot Coding Style Guide
+  
+  ## 1. Frontend (React & TypeScript)
+  
+  ### Component Patterns
+  - **Functional Components**: Use `export const ComponentName = (...) => { ... }` rather than function declarations.
+  - **Conditional Styling**: Use the `cn()` utility (based on `clsx` and `tailwind-merge`) for all dynamic class merging.
+  - **Prop Interfaces**: Define `interface ComponentProps` immediately above the component. Use `React.ElementType` for props that accept Lucide icons.
+  - **Icon Rendering**: Render dynamic icons using the `<item.icon />` syntax by assigning the icon to a lowercase variable or property.
+  
+  ### State & Navigation
+  - **View Management**: Use a `currentView` string and `onNavigate` callback pattern for simple SPA navigation within a dashboard layout.
+  - **Controlled Collapsibles**: Prefer manual state management (`collapsed`, `setCollapsed`) for sidebars to ensure precise control over layout transitions.
+  
+  ### Project Configuration
+  - **Path Aliasing**: Use the `@/` prefix to reference the `src` directory, configured via Vite and TypeScript.
+  - **Vite Plugins**: Use `@vitejs/plugin-react-swc` for faster builds and HMR.
+  
+  ## 2. Python (Streamlit & Scraping)
+  
+  ### Module Architecture
+  - **Sync/Async Hybrid**: Implement core logic (like scrapers) using `async` methods, but provide `_sync` wrapper functions using `asyncio.run()` for compatibility with Streamlit’s synchronous execution model.
+  - **Resource Management**: Use `@st.cache_resource` for singleton-like objects such as database managers (`SheetsManager`) or ML analyzers (`TikTokAnalyzer`).
+  
+  ### Data Handling
+  - **Pandas Integration**: Return `pd.DataFrame` from all analysis and data retrieval methods.
+  - **Defensive Mapping**: When parsing external API results (e.g., Apify), use a private `_map_result` method with extensive `.get()` calls and `try/except` blocks to handle inconsistent JSON schemas.
+  - **Data Deduplication**: Maintain a `set` of unique identifiers (e.g., `video_id`) when appending data to external storage (Google Sheets) to prevent duplicates.
+  
+  ### UI & Visualization
+  - **Session State**: Explicitly initialize all state variables (e.g., `data_loaded`, `df`) at the start of the `app.py`.
+  - **Plotly Configuration**: Use `rgba(0,0,0,0)` for `plot_bgcolor` and `paper_bgcolor` to ensure charts blend seamlessly with the Streamlit theme.
+  - **Progressive Columns**: Use `st.column_config` (e.g., `ProgressColumn`, `LinkColumn`) to turn standard DataFrames into interactive dashboards.
+  
+  ## 3. General Conventions
+  
+  ### External Integrations
+  - **Google Sheets**: Treat the first row of a worksheet as the schema definition. Automatically initialize headers if `row_values(1)` is empty.
+  - **Environment Variables**: Use `os.getenv()` as a fallback for API tokens, but prioritize explicit parameter passing for flexibility.
+  
+  ### Error Handling
+  - **Visual Feedback**: Use `st.sidebar.error` or `st.sidebar.warning` instead of generic print statements for user-facing errors in the dashboard.
+  - **Silent Failures**: In mapping functions or loops, use `continue` within `try/except` blocks to ensure a single malformed data point doesn't crash the entire ingestion pipeline.
+  </project_guide>
+  
+  
+  [Image]
+</message>
+
+<message type=ai>
+  Thank you for providing these Workspace contents.
+</message>
+
+<message type=user>
+  <goal>
+  I am deploying this project to Vercel and encountering a `404 NOT_FOUND` error upon accessing the application. The project consists of a Vite-based React frontend and a Python backend (FastAPI/Flask) defined in `api.py`. While the local development environment works as expected, the production deployment fails to route requests correctly.
+  
+  Please review the `frontend/vite.config.ts` and the `api.py` routing logic to identify why the application is failing to resolve paths. Based on the provided workspace, I need a `vercel.json` configuration or an update to the build settings that ensures frontend routes are redirected to `index.html` (SPA routing) and that the `/api` prefix correctly proxies to the Python backend.
+  
+  Could you provide the specific configuration changes needed to resolve this 404 error, ensuring the frontend `NotFound.tsx` component only triggers for genuinely missing pages rather than during initial routing?
+  </goal>
+  
+  Review the Workspace above. Use the dropWorkspaceFragments tool to remove ALL fragments that are not directly useful for accomplishing the goal.
+  If the workspace is already well-curated, you're done!
+</message>
+
+
+
+# Tools:
+
+performedInitialReview
+dropWorkspaceFragments
+
+# Response:
+
+## reasoningContent
+
+
+## text
+
+
+## toolExecutionRequests
+[ {
+  "id" : "",
+  "name" : "dropWorkspaceFragments",
+  "arguments" : "{\"fragments\":[{\"dropReason\":\"The project uses a FastAPI backend (api.py) and Vite frontend, making the Streamlit-focused README irrelevant to deployment configuration.\",\"fragmentId\":\"README.md\",\"keyFacts\":\"Describes a Streamlit-based version of the app with different dependencies and usage instructions.\"},{\"dropReason\":\"Standard entry point that doesn't affect routing or Vercel deployment configuration.\",\"fragmentId\":\"frontend\\\\src\\\\main.tsx\",\"keyFacts\":\"No relevant facts\"},{\"dropReason\":\"Contains high-level project description but no specific configuration for routing or Vercel proxies.\",\"fragmentId\":\"frontend\\\\README.md\",\"keyFacts\":\"No relevant facts\"}]}"
+} ]
+
+## metadata
+{
+  "modelName" : "gemini-3-flash-preview",
+  "thinkingTokens" : 0,
+  "created" : "2026-02-20 14:37:14",
+  "finishReason" : "STOP",
+  "serviceTier" : "DEFAULT",
+  "inputTokens" : 10020,
+  "cachedInputTokens" : 0,
+  "outputTokens" : 166,
+  "elapsedMs" : 3644
+}

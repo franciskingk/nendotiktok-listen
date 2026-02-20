@@ -1,0 +1,18 @@
+{
+  "model" : "gemini-3-flash-preview",
+  "messages" : [ {
+    "role" : "system",
+    "content" : "You are a Prompt Refiner for coding instructions."
+  }, {
+    "role" : "user",
+    "content" : "<workspace_summary>\n# Screenshot of a 404 NOT_FOUND error message dialog.\n\n# frontend\\src\\App.tsx\n- frontend.src.App.tsx\n- frontend.src.App.tsx.queryClient\n- frontend.src.App\n- frontend.src.App.tsx.App\n\n# frontend\\src\\main.tsx\n- frontend.src.main.tsx\n\n# frontend\\README.md\n\n# api.py\n- api.app\n- api.analyzer\n- api.CONFIG_FILE\n- api.DATA_CACHE\n- api.load_local_data\n- api.save_local_data\n- api.load_config\n- api.save_config\n- api.SettingsRequest\n- api.KeywordGroup\n- api.get_settings\n- api.update_settings\n- api.add_group\n- api.delete_group\n- api.ScrapeRequest\n- api.health_check\n- api.get_data\n- api.run_scrape\n\n# frontend\\package.json\n\n# frontend\\vite.config.ts\n- frontend.vite.config.ts\n\n# frontend\\src\\pages\\NotFound.tsx\n- frontend.src.pages.NotFound.tsx\n- frontend.src.pages.NotFound\n- frontend.src.pages.NotFound.tsx.NotFound\n\n# README.md\n</workspace_summary>\n\n<history_sumary>\n\n</history_sumary>\n\n<draft_prompt>\nwhen deploying this project to vercel, i am getting a 404 error \n</draft_prompt>\n\n<goal>\nTake the draft prompt and rewrite it so it is clear, concise, and well-structured.\nYou may leverage information from the Workspace, but do not speculate beyond what you know for sure.\n\nOutput only the improved prompt in 2-4 paragraphs.\n</goal>\n"
+  } ],
+  "stream" : true,
+  "stream_options" : {
+    "include_usage" : true
+  },
+  "max_completion_tokens" : 65535,
+  "user" : "237f4ef9-3a42-4850-a635-615fca689856",
+  "reasoning_effort" : "disable",
+  "prompt_cache_key" : "gemini-3-flash-preview237f4ef9-3a42-4850-a635-615fca689856"
+}

@@ -1,0 +1,1155 @@
+# Request to gemini-3-pro-preview:
+
+<message type=system>
+  <instructions>
+  You are the Search Agent, a code researcher that can answer, plan, or hand off implementation.
+  
+  Objective: LUTZ
+  Deliverable: one of: answer, task list, or Code Agent invocation
+  
+  Your goal is to gather enough context to either answer the question, produce a task list, or invoke the Code Agent for a small change.
+  
+  Your responsibilities are:
+    1.  **Find & Discover:** Use search and inspection tools to locate relevant code (files, classes, methods).
+    2.  **Curate & Prune:** Aggressively prune the Workspace to leave *only* essential context.
+  3.  **Handoff:** Your final output is a clean workspace ready for the Code Agent.
+  
+  Remember: **You must never write, create, or modify code.** Your purpose is to *find* existing code, not *create* new code.
+  
+  Memory model (reliability):
+    - Durable memory is ONLY the Workspace (fragments + SpecialText such as Discarded Context).
+    - Chat history (including tool outputs) may be summarized or truncated; do NOT rely on it to retain details.
+    - If you might need something later, persist it into the Workspace:
+        - For structure/types/navigation: add class/file summaries.
+        - For behavior: add method sources; escalate to class source or full files only when needed.
+        - When dropping, record breadcrumbs in Discarded Context via dropWorkspaceFragments (keyFacts + dropReason).
+    - Summaries can serve as an index: add a summary to see the API/structure, then selectively add method sources or full files only if implementation details are needed.
+  
+  Critical rules:
+    1) PRUNE the Workspace continuously.
+       - You may drop a fragment only when it is:
+           (a) unrelated to the goal, OR
+           (b) adequately replaced by smaller Workspace artifacts (method sources and/or class/file summaries).
+       - When using dropWorkspaceFragments, provide:
+              keyFacts: Key facts to retain: file paths, class/method names, constraints, notable behavior. Use 'No relevant facts' if nothing worth preserving. Describe what IS, not what SHOULD BE. No action items for the Code Agent.
+              dropReason: One short sentence: why is it safe to drop this fragment?
+       - Workspace granularity (Prefer the smallest sufficient unit of context):
+           - Structure/types/navigation: class or file summary is usually sufficient.
+           - Behavior/implementation: method source > class source > full file.
+    2) Use search and inspection tools to discover relevant code, including classes/methods/usages/call graphs.
+       - Search tool selection:
+            Definitions / declarations only?
+            -> searchSymbols
+            How is something used, accessed, obtained, injected, or called?
+            -> scanUsages
+            Strings, configs, markdown, comments, reflection, or unknown names?
+            -> findFilesContaining
+       - Summary limitations: Summaries only include declared symbols (classes, methods, fields).
+         They do NOT surface local variables or hardcoded strings like environment variable names,
+         system properties, or comments. If findFilesContaining finds a hit in a file but the summary
+         doesn't reveal the match, you MUST load the full file or method source to see the actual content.
+    3) The symbol-based tools only have visibility into the following file types: Typescript, JavaScript, Python
+       Use text-based tools if you need to search other file types.
+    4) Group related lookups into a single tool call when possible.
+    5) Your responsibility is to gather and curate the minimum sufficient context, then take the appropriate next step.
+       Do not write code, and do not attempt to write the solution or pseudocode for the solution.
+       Your job is to *gather* the materials; the Code Agent's job is to *use* them.
+       Where code changes are needed, add the *target files* to the workspace using `addFilesToWorkspace`
+       and let the Code Agent write the code. (For more localized changes, you can use `addMethodsToWorkspace`
+       or `addClassesToWorkspace`, instead of adding entire files.)
+       Note: Code Agent will also take care of creating new files; you only need to add existing files to the Workspace.
+    6) When you have enough information to take a final action, do so.
+       There are no bonus points for grooming the perfect Workspace.
+  
+  Working efficiently:
+    - Think before calling tools.
+    - Make multiple tool calls at once when searching for different types of code. Dropping
+      fragments should always be done in conjunction with other tools, since you will gain
+      no new information from the drop result.
+    - If you already know what to add, use Workspace tools directly; do not search redundantly.
+  
+  External library discovery:
+    - When the goal requires using an external library, search for its key classes/modules first
+    - If NOT found in Code Intelligence, use `importDependency` to import it:
+      * Java: `importDependency("com.fasterxml.jackson.core:jackson-databind")`
+      * Python: `importDependency("requests")` or `importDependency("numpy 2.0.0")`
+      * Rust: `importDependency("serde")` or `importDependency("tokio 1.0")`
+      * Node.js: `importDependency("lodash")` or `importDependency("@types/node")`
+    - Once imported, the library becomes searchable and can be added to the Workspace.
+    - This helps Code Agent see actual API signatures and write more accurate code.
+  </instructions>
+</message>
+
+<message type=user>
+  <workspace>
+  [Image content provided out of band]
+  
+  <fragment description="frontend\src\App.tsx">
+  import { Toaster } from "@/components/ui/toaster";
+  import { Toaster as Sonner } from "@/components/ui/sonner";
+  import { TooltipProvider } from "@/components/ui/tooltip";
+  import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+  import { BrowserRouter, Routes, Route } from "react-router-dom";
+  import Index from "./pages/Index";
+  import NotFound from "./pages/NotFound";
+  
+  const queryClient = new QueryClient();
+  
+  const App = () => (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<Index />} />
+            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </QueryClientProvider>
+  );
+  
+  export default App;
+  
+  </fragment>
+  
+  
+  <fragment description="frontend\src\main.tsx">
+  import { createRoot } from "react-dom/client";
+  import App from "./App.tsx";
+  import "./index.css";
+  
+  createRoot(document.getElementById("root")!).render(<App />);
+  
+  </fragment>
+  
+  
+  <fragment description="frontend\README.md">
+  # Nendo TikTok Bot - Frontend
+  
+  This is the curated React frontend for the Nendo TikTok Intelligence Platform.
+  
+  ## 🚀 Getting Started
+  
+  ### Prerequisites
+  - Node.js (v18+)
+  - npm or bun
+  
+  ### Installation
+  1. Navigate to the frontend directory:
+     ```bash
+     cd frontend
+     ```
+  2. Install dependencies:
+     ```bash
+     npm install
+     ```
+  3. Start the development server:
+     ```bash
+     npm run dev
+     ```
+  
+  ## 🛠️ Tech Stack
+  - **Vite**: Next-generation frontend tooling
+  - **TypeScript**: Static typing for JavaScript
+  - **React**: UI library
+  - **Shadcn UI**: Beautifully designed components
+  - **Tailwind CSS**: Utility-first CSS framework
+  - **Recharts**: Composant charting library
+  - **Lucide React**: Clean icons
+  
+  ## 📊 Features
+  - Live scraping controls
+  - Interactive sentiment pie charts
+  - Engagement timeline with activity peaks
+  - Detailed content log with direct TikTok links
+  - Filterable video gallery
+  
+  ## 🌐 Deployment
+  This project is configured for deployment on **Vercel**. Simply connect your GitHub repository and ensure the build settings are:
+  - **Build Command**: `npm run build`
+  - **Output Directory**: `dist`
+  - **Root Directory**: `frontend`
+  
+  </fragment>
+  
+  
+  <fragment description="api.py">
+  from fastapi import FastAPI, HTTPException, Request
+  from fastapi.middleware.cors import CORSMiddleware
+  from pydantic import BaseModel
+  from typing import Optional, List, Dict, Any
+  import os
+  import json
+  from datetime import datetime
+  import pandas as pd
+  import asyncio
+  
+  # Import existing modules
+  from scraper import scrape_hashtag_sync, scrape_user_sync, scrape_search_sync
+  from analysis import TikTokAnalyzer
+  from sheets import SheetsManager
+  
+  app = FastAPI(title="TikTok Pulse API")
+  
+  # Configure CORS
+  app.add_middleware(
+      CORSMiddleware,
+      allow_origins=["*"],  # In production, specify the actual frontend URL
+      allow_credentials=True,
+      allow_methods=["*"],
+      allow_headers=["*"],
+  )
+  
+  # Initialize Analyzer
+  analyzer = TikTokAnalyzer()
+  
+  CONFIG_FILE = "config.json"
+  DATA_CACHE = "data_cache.json"
+  
+  def load_local_data():
+      if os.path.exists(DATA_CACHE):
+          try:
+              with open(DATA_CACHE, "r") as f:
+                  return json.load(f)
+          except:
+              pass
+      return {"videos": [], "comments": []}
+  
+  def save_local_data(data):
+      # Load existing to avoid overwriting all
+      existing = load_local_data()
+      
+      # Merge videos (deduplicate by video_id)
+      video_ids = {v['video_id'] for v in existing['videos']}
+      for v in data.get('videos', []):
+          if str(v['video_id']) not in video_ids:
+              existing['videos'].append(v)
+              video_ids.add(str(v['video_id']))
+              
+      # Merge comments (deduplicate by comment_id)
+      comment_ids = {c['comment_id'] for c in existing['comments']}
+      for c in data.get('comments', []):
+          if str(c['comment_id']) not in comment_ids:
+              existing['comments'].append(c)
+              comment_ids.add(str(c['comment_id']))
+              
+      with open(DATA_CACHE, "w") as f:
+          json.dump(existing, f)
+  
+  def load_config():
+      if os.path.exists(CONFIG_FILE):
+          try:
+              with open(CONFIG_FILE, "r") as f:
+                  config = json.load(f)
+                  if "groups" not in config:
+                      config["groups"] = []
+                  return config
+          except:
+              pass
+      return {"sheet_url": "", "apify_token": "", "groups": []}
+  
+  def save_config(config):
+      with open(CONFIG_FILE, "w") as f:
+          json.dump(config, f)
+  
+  class SettingsRequest(BaseModel):
+      sheet_url: str
+      apify_token: Optional[str] = None
+  
+  class KeywordGroup(BaseModel):
+      name: str
+      keywords: List[str]
+      exclude_keywords: List[str] = []
+      exact_match: bool = False
+  
+  @app.get("/api/settings")
+  def get_settings():
+      return load_config()
+  
+  @app.post("/api/settings")
+  def update_settings(request: SettingsRequest):
+      try:
+          config = load_config()
+          config["sheet_url"] = request.sheet_url
+          if request.apify_token is not None:
+              config["apify_token"] = request.apify_token
+          save_config(config)
+          print(f"DEBUG: Saved config: {config}")
+          return {"success": True, "config": config}
+      except Exception as e:
+          print(f"DEBUG ERROR: {e}")
+          raise HTTPException(status_code=500, detail=str(e))
+  
+  @app.post("/api/groups")
+  def add_group(group: KeywordGroup):
+      config = load_config()
+      # Remove existing group with same name if exists
+      config["groups"] = [g for g in config["groups"] if g["name"] != group.name]
+      config["groups"].append(group.dict())
+      save_config(config)
+      return {"success": True, "groups": config["groups"]}
+  
+  @app.delete("/api/groups/{name}")
+  def delete_group(name: str):
+      config = load_config()
+      config["groups"] = [g for g in config["groups"] if g["name"] != name]
+      save_config(config)
+      return {"success": True, "groups": config["groups"]}
+  
+  class ScrapeRequest(BaseModel):
+      scrape_type: str  # "Hashtag", "Username", "Keyword"
+      search_input: str
+      video_count: Optional[int] = 50
+      since_date: Optional[str] = None
+      apify_token: str
+      scrape_comments: bool = False
+      comments_limit: Optional[int] = 0
+  
+  @app.get("/api/health")
+  def health_check():
+      return {
+          "status": "healthy", 
+          "timestamp": datetime.now().isoformat(),
+          "credentials_found": os.path.exists("credentials.json")
+      }
+  
+  @app.get("/api/data")
+  async def get_data():
+      try:
+          config = load_config()
+          local_data = load_local_data()
+          
+          videos = local_data.get("videos", [])
+          comments = local_data.get("comments", [])
+          
+          sheet_url = config.get("sheet_url")
+          manager = SheetsManager(sheet_url=sheet_url if sheet_url else None)
+          
+          if manager.connect():
+              df_videos = manager.get_all_data()
+              df_comments = manager.get_all_comments()
+              
+              if not df_videos.empty:
+                  # Merge Sheets data into the list, avoiding duplicates from local cache
+                  sheet_videos = df_videos.to_dict(orient='records')
+                  local_ids = {str(v['video_id']) for v in videos}
+                  for v in sheet_videos:
+                      if str(v['video_id']) not in local_ids:
+                          videos.append(v)
+              
+              if not df_comments.empty:
+                  sheet_comments = df_comments.to_dict(orient='records')
+                  local_c_ids = {str(c['comment_id']) for c in comments}
+                  for c in sheet_comments:
+                      if str(c['comment_id']) not in local_c_ids:
+                          comments.append(c)
+  
+          # Convert list to DataFrame for analysis
+          df_videos = pd.DataFrame(videos)
+          df_comments = pd.DataFrame(comments)
+          
+          if not df_videos.empty:
+              df_videos = analyzer.calculate_engagement_rate(df_videos)
+              df_videos = analyzer.add_sentiment_analysis(df_videos, method='vader')
+              if 'publish_date' in df_videos.columns:
+                  df_videos['publish_date'] = pd.to_datetime(df_videos['publish_date']).dt.strftime('%Y-%m-%d %H:%M:%S')
+              if 'timestamp' in df_videos.columns:
+                  df_videos['timestamp'] = pd.to_datetime(df_videos['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
+          
+          if not df_comments.empty:
+              df_comments = analyzer.add_sentiment_analysis(df_comments, method='vader', text_column='text')
+              if 'date' in df_comments.columns:
+                  df_comments['date'] = pd.to_datetime(df_comments['date']).dt.strftime('%Y-%m-%d %H:%M:%S')
+              if 'scraped_at' in df_comments.columns:
+                  df_comments['scraped_at'] = pd.to_datetime(df_comments['scraped_at']).dt.strftime('%Y-%m-%d %H:%M:%S')
+  
+          return {
+              "videos": df_videos.to_dict(orient='records') if not df_videos.empty else [],
+              "comments": df_comments.to_dict(orient='records') if not df_comments.empty else [],
+              "credentials_found": os.path.exists("credentials.json")
+          }
+      except Exception as e:
+          print(f"API Data Error: {e}")
+          return {"videos": [], "comments": [], "error": str(e)}
+  
+  @app.post("/api/scrape")
+  async def run_scrape(request: ScrapeRequest):
+      try:
+          config = load_config()
+          since_dt = None
+          if request.since_date:
+              try:
+                  since_dt = datetime.fromisoformat(request.since_date)
+              except:
+                  pass
+  
+          results = []
+          loop = asyncio.get_event_loop()
+          
+          if request.scrape_type == "Hashtag":
+              results = await loop.run_in_executor(None, scrape_hashtag_sync, 
+                          request.search_input, request.video_count, since_dt, request.apify_token, request.comments_limit if request.scrape_comments else 0)
+          elif request.scrape_type == "Username":
+              results = await loop.run_in_executor(None, scrape_user_sync, 
+                          request.search_input, request.video_count, since_dt, request.apify_token, request.comments_limit if request.scrape_comments else 0)
+          else: # Keyword
+              results = await loop.run_in_executor(None, scrape_search_sync, 
+                          request.search_input, request.video_count, since_dt, request.apify_token, request.comments_limit if request.scrape_comments else 0)
+          
+          if results:
+              all_comments = []
+              for video in results:
+                  if 'scraped_comments' in video:
+                      all_comments.extend(video['scraped_comments'])
+                      del video['scraped_comments']
+              
+              # Save to local cache regardless of Sheets status
+              save_local_data({"videos": results, "comments": all_comments})
+              
+              # Try to save to Sheets if connected
+              manager = SheetsManager(sheet_url=config.get("sheet_url") if config.get("sheet_url") else None)
+              if manager.connect():
+                  manager.append_data(results)
+                  if all_comments:
+                      manager.append_comments(all_comments)
+              
+              return {
+                  "success": True, 
+                  "video_count": len(results), 
+                  "comment_count": len(all_comments)
+              }
+          else:
+              return {"success": False, "error": "No results found"}
+              
+      except Exception as e:
+          raise HTTPException(status_code=500, detail=str(e))
+  
+  if __name__ == "__main__":
+      import uvicorn
+      uvicorn.run(app, host="0.0.0.0", port=8001)
+  
+  </fragment>
+  
+  
+  <fragment description="frontend\package.json">
+  {
+    "name": "vite_react_shadcn_ts",
+    "private": true,
+    "version": "0.0.0",
+    "type": "module",
+    "scripts": {
+      "dev": "vite",
+      "build": "vite build",
+      "build:dev": "vite build --mode development",
+      "lint": "eslint .",
+      "preview": "vite preview",
+      "test": "vitest run",
+      "test:watch": "vitest"
+    },
+    "dependencies": {
+      "@hookform/resolvers": "^3.10.0",
+      "@radix-ui/react-accordion": "^1.2.11",
+      "@radix-ui/react-alert-dialog": "^1.1.14",
+      "@radix-ui/react-aspect-ratio": "^1.1.7",
+      "@radix-ui/react-avatar": "^1.1.10",
+      "@radix-ui/react-checkbox": "^1.3.2",
+      "@radix-ui/react-collapsible": "^1.1.11",
+      "@radix-ui/react-context-menu": "^2.2.15",
+      "@radix-ui/react-dialog": "^1.1.14",
+      "@radix-ui/react-dropdown-menu": "^2.1.15",
+      "@radix-ui/react-hover-card": "^1.1.14",
+      "@radix-ui/react-label": "^2.1.7",
+      "@radix-ui/react-menubar": "^1.1.15",
+      "@radix-ui/react-navigation-menu": "^1.2.13",
+      "@radix-ui/react-popover": "^1.1.14",
+      "@radix-ui/react-progress": "^1.1.7",
+      "@radix-ui/react-radio-group": "^1.3.7",
+      "@radix-ui/react-scroll-area": "^1.2.9",
+      "@radix-ui/react-select": "^2.2.5",
+      "@radix-ui/react-separator": "^1.1.7",
+      "@radix-ui/react-slider": "^1.3.5",
+      "@radix-ui/react-slot": "^1.2.3",
+      "@radix-ui/react-switch": "^1.2.5",
+      "@radix-ui/react-tabs": "^1.1.12",
+      "@radix-ui/react-toast": "^1.2.14",
+      "@radix-ui/react-toggle": "^1.1.9",
+      "@radix-ui/react-toggle-group": "^1.1.10",
+      "@radix-ui/react-tooltip": "^1.2.7",
+      "@tanstack/react-query": "^5.83.0",
+      "class-variance-authority": "^0.7.1",
+      "clsx": "^2.1.1",
+      "cmdk": "^1.1.1",
+      "date-fns": "^3.6.0",
+      "embla-carousel-react": "^8.6.0",
+      "input-otp": "^1.4.2",
+      "lucide-react": "^0.462.0",
+      "next-themes": "^0.3.0",
+      "react": "^18.3.1",
+      "react-day-picker": "^8.10.1",
+      "react-dom": "^18.3.1",
+      "react-hook-form": "^7.61.1",
+      "react-resizable-panels": "^2.1.9",
+      "react-router-dom": "^6.30.1",
+      "recharts": "^2.15.4",
+      "sonner": "^1.7.4",
+      "tailwind-merge": "^2.6.0",
+      "tailwindcss-animate": "^1.0.7",
+      "vaul": "^0.9.9",
+      "zod": "^3.25.76"
+    },
+    "devDependencies": {
+      "@eslint/js": "^9.32.0",
+      "@testing-library/jest-dom": "^6.6.0",
+      "@testing-library/react": "^16.0.0",
+      "@tailwindcss/typography": "^0.5.16",
+      "@types/node": "^22.16.5",
+      "@types/react": "^18.3.23",
+      "@types/react-dom": "^18.3.7",
+      "@vitejs/plugin-react-swc": "^3.11.0",
+      "autoprefixer": "^10.4.21",
+      "eslint": "^9.32.0",
+      "eslint-plugin-react-hooks": "^5.2.0",
+      "eslint-plugin-react-refresh": "^0.4.20",
+      "globals": "^15.15.0",
+      "jsdom": "^20.0.3",
+      "postcss": "^8.5.6",
+      "tailwindcss": "^3.4.17",
+      "typescript": "^5.8.3",
+      "typescript-eslint": "^8.38.0",
+      "vite": "^5.4.19",
+      "vitest": "^3.2.4"
+    }
+  }
+  </fragment>
+  
+  
+  <fragment description="frontend\vite.config.ts">
+  import { defineConfig } from "vite";
+  import react from "@vitejs/plugin-react-swc";
+  import path from "path";
+  
+  // https://vitejs.dev/config/
+  export default defineConfig(({ mode }) => ({
+    server: {
+      host: "::",
+      port: 8081,
+      hmr: {
+        overlay: false,
+      },
+    },
+    plugins: [react()],
+    resolve: {
+      alias: {
+        "@": path.resolve(__dirname, "./src"),
+      },
+    },
+  }));
+  
+  </fragment>
+  
+  
+  <fragment description="frontend\src\pages\NotFound.tsx">
+  import { useLocation } from "react-router-dom";
+  import { useEffect } from "react";
+  
+  const NotFound = () => {
+    const location = useLocation();
+  
+    useEffect(() => {
+      console.error("404 Error: User attempted to access non-existent route:", location.pathname);
+    }, [location.pathname]);
+  
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-muted">
+        <div className="text-center">
+          <h1 className="mb-4 text-4xl font-bold">404</h1>
+          <p className="mb-4 text-xl text-muted-foreground">Oops! Page not found</p>
+          <a href="/" className="text-primary underline hover:text-primary/90">
+            Return to Home
+          </a>
+        </div>
+      </div>
+    );
+  };
+  
+  export default NotFound;
+  
+  </fragment>
+  
+  
+  <fragment description="README.md">
+  # 📊 TikTok Social Listening & Analytics Dashboard
+  
+  A complete Python web application for scraping TikTok data and visualizing interactive analytics with sentiment analysis, engagement metrics, and trend tracking.
+  
+  ## ✨ Features
+  
+  ### 🔍 Data Scraping
+  - Scrape TikTok videos by hashtag or username
+  - Extract comprehensive video data:
+    - Video ID, URL, caption
+    - Author information
+    - Engagement metrics (likes, comments, shares, views)
+    - Publish date
+    - Hashtags and mentions
+  
+  ### 💾 Data Storage
+  - Automatic Google Sheets integration
+  - Duplicate prevention using video IDs
+  - Timestamped data entries
+  - Auto-create sheets if they don't exist
+  
+  ### 📈 Analytics
+  - **Sentiment Analysis**: TextBlob and VADER sentiment scoring
+  - **Engagement Rate**: Calculated engagement metrics
+  - **Word Frequency**: Extract trending words from captions
+  - **Time Series**: Aggregate data by hour/day/week
+  
+  ### 📊 Interactive Visualizations
+  - Views over time (line chart)
+  - Engagement metrics over time (multi-line chart)
+  - Sentiment distribution (pie chart)
+  - Top posts by engagement (bar chart)
+  - Sentiment score trends
+  - Word cloud from captions
+  - Top words and authors tables
+  
+  ### 🎨 Modern UI
+  - Clean Streamlit interface
+  - Sidebar filters for hashtag/username input
+  - Date range filtering
+  - Refresh scrape button
+  - Gradient styling and modern design
+  
+  ## 🚀 Quick Start
+  
+  ### 1. Install Dependencies
+  
+  ```bash
+  pip install -r requirements.txt
+  ```
+  
+  After installing, you need to install Playwright browsers:
+  
+  ```bash
+  playwright install
+  ```
+  
+  ### 2. Set Up Google Sheets (Optional but Recommended)
+  
+  1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+  2. Create a new project
+  3. Enable Google Sheets API and Google Drive API
+  4. Create a Service Account
+  5. Download the credentials JSON file
+  6. Rename it to `credentials.json` and place it in the project directory
+  
+  ### 3. Run the Application
+  
+  ```bash
+  streamlit run app.py
+  ```
+  
+  The dashboard will open in your browser at `http://localhost:8501`
+  
+  ## 📁 Project Structure
+  
+  ```
+  tiktok-analytics/
+  ├── app.py              # Main Streamlit dashboard
+  ├── scraper.py          # TikTok scraping module
+  ├── analysis.py         # Analytics and sentiment analysis
+  ├── sheets.py           # Google Sheets integration
+  ├── requirements.txt    # Python dependencies
+  ├── credentials.json    # Google Service Account credentials (not included)
+  └── README.md          # This file
+  ```
+  
+  ## 🎯 Usage
+  
+  ### Scraping Data
+  
+  1. **By Hashtag**:
+     - Select "Hashtag" in the sidebar
+     - Enter hashtag without # (e.g., "viral")
+     - Choose number of videos (10-100)
+     - Click "🔄 Scrape New Data"
+  
+  2. **By Username**:
+     - Select "Username" in the sidebar
+     - Enter username without @ (e.g., "username")
+     - Choose number of videos (10-100)
+     - Click "🔄 Scrape New Data"
+  
+  ### Viewing Analytics
+  
+  1. Click "📥 Load Data from Sheets" to load all stored data
+  2. Use date range filter to focus on specific time periods
+  3. Explore interactive charts and metrics
+  4. View raw data in the expandable table
+  
+  ### Key Metrics
+  
+  - **Total Videos**: Number of videos in dataset
+  - **Total Views**: Sum of all video views
+  - **Total Likes**: Sum of all likes
+  - **Avg Engagement**: Average engagement rate across all videos
+  
+  ## 🔧 Customization
+  
+  ### Change Sentiment Analysis Method
+  
+  In `app.py`, modify the sentiment analysis method:
+  
+  ```python
+  df = analyzer.add_sentiment_analysis(df, method='vader')  # or 'textblob'
+  ```
+  
+  ### Adjust Time Aggregation
+  
+  In `app.py`, change the frequency for time series:
+  
+  ```python
+  time_agg = analyzer.aggregate_by_time(df, freq='D')  # 'H' for hour, 'D' for day, 'W' for week
+  ```
+  
+  ### Customize Google Sheet Name
+  
+  In `sheets.py` or when initializing:
+  
+  ```python
+  sheets = SheetsManager(sheet_name='My Custom Sheet Name')
+  ```
+  
+  ## 📊 Analytics Explained
+  
+  ### Engagement Rate
+  ```
+  Engagement Rate = (Likes + Comments + Shares) / Views × 100
+  ```
+  
+  ### Sentiment Analysis
+  - **VADER**: Best for social media text, returns compound score (-1 to +1)
+  - **TextBlob**: General purpose, returns polarity (-1 to +1) and subjectivity (0 to 1)
+  
+  ### Sentiment Categories
+  - **Positive**: Score > 0.05
+  - **Neutral**: Score between -0.05 and 0.05
+  - **Negative**: Score < -0.05
+  
+  ## ⚠️ Important Notes
+  
+  ### TikTok API Limitations
+  - TikTok doesn't have an official public API
+  - This app uses unofficial scraping methods via TikTokApi
+  - Scraping may be rate-limited or blocked
+  - Use responsibly and respect TikTok's terms of service
+  
+  ### Google Sheets
+  - Without Google Sheets credentials, data won't persist between sessions
+  - You can still use the app for one-time analysis
+  - Data will be stored in memory only
+  
+  ### Playwright
+  - First-time setup requires installing browser binaries
+  - Run `playwright install` after pip install
+  - Requires ~300MB of disk space for browsers
+  
+  ## 🛠️ Troubleshooting
+  
+  ### "TikTok API initialization failed"
+  - Ensure Playwright is installed: `playwright install`
+  - Check your internet connection
+  - TikTok may be blocking automated access
+  
+  ### "Google Sheets not connected"
+  - Verify `credentials.json` exists in project directory
+  - Check that Google Sheets API is enabled
+  - Ensure service account has proper permissions
+  
+  ### "No data found"
+  - Try a different hashtag or username
+  - Reduce the number of videos requested
+  - Check if the account/hashtag exists on TikTok
+  
+  ## 📦 Dependencies
+  
+  - **streamlit**: Web dashboard framework
+  - **plotly**: Interactive visualizations
+  - **pandas**: Data manipulation
+  - **TikTokApi**: TikTok scraping
+  - **playwright**: Browser automation
+  - **gspread**: Google Sheets integration
+  - **textblob**: Sentiment analysis
+  - **vaderSentiment**: Social media sentiment analysis
+  - **wordcloud**: Word cloud generation
+  - **matplotlib**: Plotting library
+  
+  ## 🔮 Future Enhancements
+  
+  - [ ] Scheduled automated scraping
+  - [ ] Email/Slack notifications
+  - [ ] Competitor analysis
+  - [ ] Hashtag recommendations
+  - [ ] Export to CSV/Excel
+  - [ ] Multi-account tracking
+  - [ ] Advanced filtering options
+  - [ ] Custom date range presets
+  
+  ## 📄 License
+  
+  This project is for educational purposes. Please respect TikTok's terms of service and use responsibly.
+  
+  ## 🤝 Contributing
+  
+  Feel free to fork, modify, and submit pull requests!
+  
+  ---
+  
+  **Made with ❤️ for social media analytics**
+  
+  </fragment>
+  
+  
+  <fragment description="Discarded Context">
+  { }
+  </fragment>
+  </workspace><project_guide>
+  ### AGENTS.md at .
+  
+  # Nendo TikTok Bot Coding Style Guide
+  
+  ## 1. Frontend (React & TypeScript)
+  
+  ### Component Patterns
+  - **Functional Components**: Use `export const ComponentName = (...) => { ... }` rather than function declarations.
+  - **Conditional Styling**: Use the `cn()` utility (based on `clsx` and `tailwind-merge`) for all dynamic class merging.
+  - **Prop Interfaces**: Define `interface ComponentProps` immediately above the component. Use `React.ElementType` for props that accept Lucide icons.
+  - **Icon Rendering**: Render dynamic icons using the `<item.icon />` syntax by assigning the icon to a lowercase variable or property.
+  
+  ### State & Navigation
+  - **View Management**: Use a `currentView` string and `onNavigate` callback pattern for simple SPA navigation within a dashboard layout.
+  - **Controlled Collapsibles**: Prefer manual state management (`collapsed`, `setCollapsed`) for sidebars to ensure precise control over layout transitions.
+  
+  ### Project Configuration
+  - **Path Aliasing**: Use the `@/` prefix to reference the `src` directory, configured via Vite and TypeScript.
+  - **Vite Plugins**: Use `@vitejs/plugin-react-swc` for faster builds and HMR.
+  
+  ## 2. Python (Streamlit & Scraping)
+  
+  ### Module Architecture
+  - **Sync/Async Hybrid**: Implement core logic (like scrapers) using `async` methods, but provide `_sync` wrapper functions using `asyncio.run()` for compatibility with Streamlit’s synchronous execution model.
+  - **Resource Management**: Use `@st.cache_resource` for singleton-like objects such as database managers (`SheetsManager`) or ML analyzers (`TikTokAnalyzer`).
+  
+  ### Data Handling
+  - **Pandas Integration**: Return `pd.DataFrame` from all analysis and data retrieval methods.
+  - **Defensive Mapping**: When parsing external API results (e.g., Apify), use a private `_map_result` method with extensive `.get()` calls and `try/except` blocks to handle inconsistent JSON schemas.
+  - **Data Deduplication**: Maintain a `set` of unique identifiers (e.g., `video_id`) when appending data to external storage (Google Sheets) to prevent duplicates.
+  
+  ### UI & Visualization
+  - **Session State**: Explicitly initialize all state variables (e.g., `data_loaded`, `df`) at the start of the `app.py`.
+  - **Plotly Configuration**: Use `rgba(0,0,0,0)` for `plot_bgcolor` and `paper_bgcolor` to ensure charts blend seamlessly with the Streamlit theme.
+  - **Progressive Columns**: Use `st.column_config` (e.g., `ProgressColumn`, `LinkColumn`) to turn standard DataFrames into interactive dashboards.
+  
+  ## 3. General Conventions
+  
+  ### External Integrations
+  - **Google Sheets**: Treat the first row of a worksheet as the schema definition. Automatically initialize headers if `row_values(1)` is empty.
+  - **Environment Variables**: Use `os.getenv()` as a fallback for API tokens, but prioritize explicit parameter passing for flexibility.
+  
+  ### Error Handling
+  - **Visual Feedback**: Use `st.sidebar.error` or `st.sidebar.warning` instead of generic print statements for user-facing errors in the dashboard.
+  - **Silent Failures**: In mapping functions or loops, use `continue` within `try/except` blocks to ensure a single malformed data point doesn't crash the entire ingestion pipeline.
+  </project_guide>
+  
+  
+  [Image]
+</message>
+
+<message type=ai>
+  Thank you for providing these Workspace contents.
+</message>
+
+<message type=user>
+  <related_files>
+  These files (with the identifiers they declare) MAY be relevant. They are NOT in the Workspace yet.
+  Add summaries or sources if needed; otherwise ignore them.
+  
+  <file path="analysis.py">
+  - analysis.TikTokAnalyzer
+    - __init__
+    - calculate_engagement_rate
+    - analyze_sentiment_textblob
+    - analyze_sentiment_vader
+    - add_sentiment_analysis
+    - extract_word_frequency
+    - aggregate_by_time
+    - get_top_posts
+    - get_sentiment_distribution
+  </file>
+  <file path="app.py">
+  - app.get_sheets_manager
+  - app.get_analyzer
+  - app.create_wordcloud
+  - app.main
+  - app.apify_token
+  - app.scrape_type
+  - app.search_input
+  - app.use_date_limit
+  - app.since_date_input
+  - app.since_date
+  - app.no_limit
+  - app.video_count
+  - app.scrape_comments
+  - app.comments_limit
+  - app.df
+  - app.analyzer
+  - app.col5
+  - app.col4
+  - app.acol2
+  - app.acol1
+  - app.acol3
+  - app.top_videos
+  - app.vid_cols
+  - app.display_df
+  - app.df_c
+  - app.col2
+  - app.col3
+  - app.col1
+  - app.sheets
+  </file>
+  <file path="frontend\src\components\ui\input.tsx">
+  - frontend.src.components.ui.input.tsx
+  - frontend.src.components.ui.input.tsx.Input
+  </file>
+  <file path="frontend\src\components\ui\sonner.tsx">
+  - frontend.src.components.ui.sonner.tsx
+  - frontend.src.components.ui.sonner.tsx.ToasterProps
+  - frontend.src.components.ui.Toaster
+  - frontend.src.components.ui.sonner.tsx.Toaster
+  </file>
+  <file path="scraper.py">
+  - scraper.TikTokScraper
+    - __init__
+    - initialize
+    - extract_hashtags
+    - extract_mentions
+    - _map_result
+    - _run_actor
+    - scrape_hashtag
+    - scrape_user
+    - scrape_search
+    - close
+  - scraper.scrape_hashtag_sync
+  - scraper.scrape_user_sync
+  - scraper.scrape_search_sync
+  </file>
+  <file path="sheets.py">
+  - sheets.SheetsManager
+    - __init__
+    - connect
+    - get_existing_video_ids
+    - append_comments
+    - append_data
+    - get_all_data
+    - get_all_comments
+    - get_sheet_url
+  </file>
+  </related_files>
+</message>
+
+<message type=ai>
+  Acknowledged. I will explicitly add only what is relevant.
+</message>
+
+<message type=user>
+  <query_or_instructions>
+  I am deploying this project to Vercel and encountering a `404 NOT_FOUND` error upon accessing the application. The project consists of a Vite-based React frontend and a Python backend (FastAPI/Flask) defined in `api.py`. While the local development environment works as expected, the production deployment fails to route requests correctly.
+  
+  Please review the `frontend/vite.config.ts` and the `api.py` routing logic to identify why the application is failing to resolve paths. Based on the provided workspace, I need a `vercel.json` configuration or an update to the build settings that ensures frontend routes are redirected to `index.html` (SPA routing) and that the `/api` prefix correctly proxies to the Python backend.
+  
+  Could you provide the specific configuration changes needed to resolve this 404 error, ensuring the frontend `NotFound.tsx` component only triggers for genuinely missing pages rather than during initial routing?
+  </query_or_instructions>
+  
+  <search-objective>
+  - Prefer answer(String) when no code changes are needed and the Workspace already justifies the answer (or the question is codebase-independent).
+  - Prefer callCodeAgent(String instructions, boolean deferBuild) if the requested change is small.
+  - Otherwise, decompose the problem with createOrReplaceTaskList(String explanation, List<TaskListEntry> tasks); do not attempt to write code yet.
+  
+  Invariant: Before any final action:
+    1. Prune fragments that are no longer needed (superseded by summaries or irrelevant to the goal).
+       Do not finalize while the Workspace still contains obvious noise or superseded large fragments.
+    2. Add the minimum sufficient, decision-relevant context to remove guesswork.
+  An unchanged or empty Workspace is a failure unless the question is explicitly independent of this codebase.
+  
+  Workspace context guidance:
+    - If you know where to find what you're looking for, just add it, you don't need to keep searching "just in case".
+    - If you don't know where to find a piece of information, use search tools or skimDirectory to identify specific files/classes/methods instead of guessing.
+    - The add*ToWorkspace tools do not work with directories or globs or wildcards as parameters;
+      skimDirectory can help you narrow down your search, after which you should add only those specific items to the Workspace.
+  When to prefer the different content types:
+    - Summaries: when you only need API signatures/types/constants.
+    - Method sources: when you need implementation details for specific methods.
+    - Full sources: when you need complete implementation details.
+  </search-objective>
+  
+  
+  
+  <build-setup-task-guidance>
+  If you produce a task list, the FIRST task MUST configure the build and test stack (and any required environment variables)
+  so that subsequent tasks can run `build/lint` and tests.
+  </build-setup-task-guidance>
+  
+  <tool-instructions>
+  Decide the next tool action(s) to make progress toward the objective in service of the goal.
+  
+  
+  
+  Pruning mandate (do this now):
+    - Prune in parallel with exploration.
+    - Drop irrelevant/noise fragments now with dropWorkspaceFragments.
+    - Replace large fragments with smaller artifacts (addFileSummariesToWorkspace, addClassSummariesToWorkspace, addMethodsToWorkspace) when possible; drop superseded originals.
+    - Check Discarded Context before re-adding content; you may not drop pinned fragments.
+  
+  
+  
+  Finalization options:
+  
+  
+  - Use answer(String) ONLY when the Workspace already contains sufficient context to justify the answer, OR when the question is explicitly codebase-independent. The answer needs to be Markdown-formatted (see <markdown-reminder>).
+  - Use askForClarification(String queryForUser) when the goal is unclear or you cannot find the necessary information; this will ask the user directly and stop.
+  
+  
+  - Use createOrReplaceTaskList(String explanation, List<TaskListEntry> tasks) to replace the entire task list when the request involves code changes. Titles are summarized automatically from task text; pass task texts only. Completed tasks from the previous list are implicitly dropped. Produce a clear, minimal, incremental, and testable sequence of tasks that a Code Agent can execute, once you understand where all the necessary pieces live.
+    Guidance:
+      - Each task must be self-contained; the Code Agent will not have access to your instructions or conversation history.
+      - It is CRITICAL to keep the project buildable and testable after each task; in the VERY RARE case where breaking the build
+        temporarily is necessary, YOU MUST BE EXPLICIT about this to avoid confusing the Code Agent.
+  
+  
+  
+  - Use callCodeAgent(String instructions, boolean deferBuild) to attempt implementation now in a single shot. If it succeeds, we finish; otherwise, continue with search/planning. Only use this when the goal is small enough to not need decomposition into a task list, and after you have added all the necessary context to the Workspace.
+  
+  - If we cannot find the answer or the request is out of scope for this codebase, use abortSearch with a clear explanation.
+  
+  
+  You CAN call multiple non-terminal tools in a single turn, and you SHOULD whenever you can
+  usefully do so.
+  
+  Terminal actions (answer, createOrReplaceTaskList, callCodeAgent, abortSearch)
+  must be the ONLY tool in a turn. If final cleanup is needed (for example, dropWorkspaceFragments), do it first,
+  then finalize on the next turn. If you include a terminal together with other tools, the terminal will be ignored for this turn.
+  
+  Remember: it is NOT your objective to write code.
+  
+  
+  </tool-instructions>
+  
+  <markdown-reminder>
+  IMPORTANT: When providing explanations, thoughts, or answers, ALWAYS use Markdown for readability.
+  - Use `inline code` for identifiers, file paths, and short snippets.
+  - Use code blocks for longer snippets.
+  - Use headers, lists, and bold text to structure your response.
+  </markdown-reminder>
+  
+  <workspace_toc>
+  Here is a list of the full contents of the Workspace that you can refer to above.
+  I have pinned some of them; these may not be dropped. If it has a fragmentid instead of a pin marker, you may drop it.
+  <workspace_readonly>
+  The following fragments MAY NOT BE EDITED:
+  <fragment-toc description="Screenshot of a 404 NOT_FOUND error message dialog." fragmentid="0e7c650fb701fccad55e5225f27af6beba341b16d8bec42f84eec764f521b588" />
+  <fragment-toc description="Discarded Context" pinned="true" />
+  </workspace_readonly>
+  <workspace_editable>
+  The following fragments MAY BE EDITED:
+  <fragment-toc description="README.md" fragmentid="84fdf351-a943-4e40-810d-4ee1ab3c6cb3" />
+  <fragment-toc description="frontend\src\App.tsx" fragmentid="e26af09d-2c4d-4186-9339-47e453a3570b" />
+  <fragment-toc description="frontend\src\main.tsx" fragmentid="50a0673e-761d-49ea-b94d-99bed66a2ebf" />
+  <fragment-toc description="frontend\src\pages\NotFound.tsx" fragmentid="33759428-bab9-4e6b-8754-8c5a1ec13543" />
+  <fragment-toc description="api.py" fragmentid="ded6514b-033b-49bc-9815-981785903b1c" />
+  <fragment-toc description="frontend\vite.config.ts" fragmentid="c329a1ff-e73f-49e7-a98f-8e3ad314f3df" />
+  <fragment-toc description="frontend\package.json" fragmentid="948e3fd9-8351-4c82-b025-3549d0868437" />
+  <fragment-toc description="frontend\README.md" fragmentid="554f91f7-0742-45f2-b567-0ebb3cd0a326" />
+  </workspace_editable>
+  
+  </workspace_toc>
+</message>
+
+
+
+# Tools:
+
+searchSymbols
+scanUsages
+getSymbolLocations
+skimDirectory
+addClassesToWorkspace
+addClassSummariesToWorkspace
+addMethodsToWorkspace
+addFileSummariesToWorkspace
+findFilesContaining
+findFilenames
+searchFileContents
+addFilesToWorkspace
+addUrlContentsToWorkspace
+searchGitCommitMessages
+getGitLog
+explainCommit
+jq
+dropWorkspaceFragments
+importDependency
+answer
+createOrReplaceTaskList
+callCodeAgent
+askForClarification
+abortSearch
+
+# Response:
+
+## reasoningContent
+**Troubleshooting Deployment Issues**
+
+I'm currently facing a 404 error when deploying my Vite React frontend and FastAPI backend project to Vercel, despite it working locally. I suspect the issue lies in my `vercel.json` configuration or build settings, especially concerning SPA routing and API proxying. I need to figure out how to correctly set this up.
+
+
+**Analyzing Project Structure**
+
+I've examined the project structure, specifically the file placement and configurations. I've noted React routes in `App.tsx` and the entry point in `main.tsx`. The FastAPI backend seems to be at the root with `api.py`. There is a `frontend/README.md` with some deployment info and `frontend/package.json` for scripts. I've also found `frontend/vite.config.ts`, and the 404 component. My immediate goal is confirming and inspecting the contents of `vercel.json`, which could be the source of the deployment issue.
+
+
+**Confirming Vercel Configuration**
+
+I'm focused on verifying the existence and contents of `vercel.json`. If it's missing, I'll create it to explicitly define the build and rewrite rules. The key aspect is configuring rewrites for both SPA routing (excluding `/api`) and API proxying to the Python backend. The structure suggests a monorepo approach, so I need to make sure the backend routes are correctly handled, potentially mapping to `api.py` at the root. Also I confirmed SPA client side routing from inspecting core component files.
+
+
+
+
+## text
+
+
+## toolExecutionRequests
+[ {
+  "id" : "",
+  "name" : "findFilenames",
+  "arguments" : "{\"patterns\":[\"vercel.json\",\"requirements.txt\"],\"reasoning\":\"Checking for existing Vercel configuration and Python requirements.\"}"
+}, {
+  "id" : "",
+  "name" : "dropWorkspaceFragments",
+  "arguments" : "{\"fragments\":[{\"dropReason\":\"Client-side routing confirmed; implementation details not needed for deployment config.\",\"fragmentId\":\"e26af09d-2c4d-4186-9339-47e453a3570b\",\"keyFacts\":\"React Router uses BrowserRouter. Routes: / -\\u003e Index, * -\\u003e NotFound.\"},{\"dropReason\":\"Standard entry point, not relevant for routing config.\",\"fragmentId\":\"50a0673e-761d-49ea-b94d-99bed66a2ebf\",\"keyFacts\":\"Mounts App to #root.\"},{\"dropReason\":\"Component implementation details irrelevant for routing config.\",\"fragmentId\":\"33759428-bab9-4e6b-8754-8c5a1ec13543\",\"keyFacts\":\"Logs 404 errors to console.\"},{\"dropReason\":\"General info, redundant with specific file contents.\",\"fragmentId\":\"554f91f7-0742-45f2-b567-0ebb3cd0a326\",\"keyFacts\":\"Deployment instructions: Root Directory 'frontend', Output 'dist', Build 'npm run build'.\"}]}"
+} ]
+
+## metadata
+{
+  "modelName" : "gemini-3-pro-preview",
+  "thinkingTokens" : 822,
+  "created" : "2026-02-20 14:38:32",
+  "finishReason" : "STOP",
+  "serviceTier" : "DEFAULT",
+  "inputTokens" : 17163,
+  "cachedInputTokens" : 0,
+  "outputTokens" : 349,
+  "elapsedMs" : 78778
+}

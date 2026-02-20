@@ -1,0 +1,36 @@
+# Request to gpt-5-mini:
+
+<message type=user>
+  Briefly describe this image in a few words (e.g., 'screenshot of code', 'diagram of system').
+  [Image]
+</message>
+
+
+
+
+
+# Response:
+
+## reasoningContent
+**Describing an image**
+
+The user is asking for a brief description of an image. I should keep it short and straightforward. For instance, saying "screenshot of a 404 NOT_FOUND error message" seems like a good option. I'll remember to be concise and clear in my response. Keeping it simple is key! Alright, I feel ready to provide that short phrase!
+
+## text
+Screenshot of a 404 NOT_FOUND error message dialog.
+
+## toolExecutionRequests
+[ ]
+
+## metadata
+{
+  "modelName" : "gpt-5-mini-2025-08-07",
+  "thinkingTokens" : 0,
+  "created" : "2026-02-20 14:36:44",
+  "finishReason" : "STOP",
+  "serviceTier" : "DEFAULT",
+  "inputTokens" : 295,
+  "cachedInputTokens" : 0,
+  "outputTokens" : 72,
+  "elapsedMs" : 4315
+}
