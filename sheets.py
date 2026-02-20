@@ -34,7 +34,7 @@ class SheetsManager:
             ]
             
             if not os.path.exists(self.credentials_file):
-                print(f"⚠️ Credentials file not found: {self.credentials_file}")
+                print(f"[WARN] Credentials file not found: {self.credentials_file}")
                 return False
             
             creds = ServiceAccountCredentials.from_json_keyfile_name(
@@ -45,13 +45,13 @@ class SheetsManager:
             # Try to open by URL first (most reliable), then by name
             try:
                 if self.sheet_url:
-                    print(f"🔗 Opening sheet by URL: {self.sheet_url}")
+                    print(f"[INFO] Opening sheet by URL: {self.sheet_url}")
                     self.sheet = self.client.open_by_url(self.sheet_url)
                 else:
                     self.sheet = self.client.open(self.sheet_name)
             except gspread.SpreadsheetNotFound:
                 if self.sheet_url:
-                     print(f"❌ Could not find sheet with URL. Checking by name...")
+                     print(f"[WARN] Could not find sheet with URL. Checking by name...")
                 
                 try:
                     self.sheet = self.client.open(self.sheet_name)
@@ -89,11 +89,11 @@ class SheetsManager:
                     'text', 'likes', 'date'
                 ])
             
-            print(f"✅ Connected to Google Sheets: {self.sheet_name}")
+            print(f"[INFO] Connected to Google Sheets: {self.sheet_name}")
             return True
             
         except Exception as e:
-            print(f"❌ Error connecting to Google Sheets: {e}")
+            print(f"[ERROR] Error connecting to Google Sheets: {e}")
             return False
     
     def get_existing_video_ids(self):
@@ -134,11 +134,11 @@ class SheetsManager:
             
             if rows:
                 self.comments_sheet.append_rows(rows)
-                print(f"✅ Added {len(rows)} comments to Sheets")
+                print(f"[INFO] Added {len(rows)} comments to Sheets")
             
             return len(rows)
         except Exception as e:
-            print(f"❌ Error appending comments: {e}")
+            print(f"[ERROR] Error appending comments: {e}")
             return 0
 
     def append_data(self, data_list):
@@ -187,11 +187,11 @@ class SheetsManager:
                 existing_ids.add(video_id)
                 new_rows += 1
             
-            print(f"✅ Added {new_rows} new rows to Google Sheets")
+            print(f"[INFO] Added {new_rows} new rows to Google Sheets")
             return new_rows
             
         except Exception as e:
-            print(f"❌ Error appending data: {e}")
+            print(f"[ERROR] Error appending data: {e}")
             return 0
     
     def get_all_data(self):
