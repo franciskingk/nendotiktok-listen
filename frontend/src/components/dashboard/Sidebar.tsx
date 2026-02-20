@@ -44,14 +44,11 @@ export const Sidebar = ({ currentView, onNavigate }: SidebarProps) => {
         onClick={() => onNavigate('Dashboard')}
         className="flex items-center gap-3 p-6 border-b border-sidebar-border cursor-pointer group"
       >
-        <div className="flex items-center justify-center transition-transform group-hover:scale-110 duration-300">
+        <div className="flex items-center justify-center transition-transform group-hover:scale-110 duration-300 w-10 h-10 text-primary">
           <img
-            src="/logo.png"
+            src="/logo-icon.svg"
             alt="Nendo"
-            className={cn(
-              "h-8 w-auto filter invert brightness-200",
-              collapsed ? "w-10 overflow-hidden object-left" : ""
-            )}
+            className="w-full h-full"
           />
         </div>
         {!collapsed && (
