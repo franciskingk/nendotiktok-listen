@@ -7,8 +7,12 @@
       "runtime": "python3.11"
     },
     {
-      "src": "frontend/dist",
-      "use": "@vercel/static"
+      "src": "frontend/package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist",
+        "buildCommand": "npm run build"
+      }
     }
   ],
   "routes": [
@@ -20,8 +24,8 @@
       "handle": "filesystem"
     },
     {
-      "src": "/((?!api/).*)",
-      "dest": "/frontend/dist/$1"
+      "src": "/(.*)",
+      "dest": "/frontend/dist/index.html"
     }
   ]
 }
