@@ -1,5 +1,4 @@
 {
-  "comment": "Root Vercel config. Handles API routing and React SPA rewrites.",
   "rewrites": [
     {
       "source": "/api/(.*)",
