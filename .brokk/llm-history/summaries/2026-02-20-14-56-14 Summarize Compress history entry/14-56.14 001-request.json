@@ -1,0 +1,18 @@
+{
+  "model" : "gpt-5-mini",
+  "messages" : [ {
+    "role" : "system",
+    "content" : "You are an expert software engineer that generates concise summaries of code-related text.\n\nReply only with the summary, without any additional text, explanations, or line breaks.\n"
+  }, {
+    "role" : "user",
+    "content" : "Give a detailed but concise summary of this task.\nA third party should be able to understand what happened without reference to the original.\nFocus on information that would be useful for someone doing further work on the project described in the task.\n\nHere is the task to summarize. Do not include XML tags or other markup.\n<task sequence=6>\n  <message type=user>\n    Update `api.py` to support loading configuration from Environment Variables.\n    Modify the `load_config` function to:\n    1. Load `config.json` if it exists (existing behavior).\n    2. Check `os.environ` for `SHEET_URL`, `APIFY_TOKEN`, and `GROUPS`.\n    3. If env vars exist, they should populate or override the config dictionary.\n    4. Ensure `GROUPS` from env vars is parsed from a JSON string if provided.\n    \n    This ensures the backend can be configured in production environments (like Vercel/Render) without needing a pre-baked `config.json` file.\n    \n    **Acceptance:**\n    Verify `api.py` checks `os.environ` for `SHEET_URL`, `APIFY_TOKEN`, and `GROUPS` (parsed from JSON string) inside `load_config`.\n    Verify `load_config` still supports `config.json` but allows env vars to override or supply missing values.\n    \n    **Key Locations:**\n    api.py\n    \n    **Key Discoveries:**\n    api.py currently only reads from config.json.\n  </message>\n  \n  <message type=ai>\n    \n    **Brokk Context Engine** analyzing repository context…\n  </message>\n  \n  <message type=ai>\n    Reasoning:\n    \n    \n    `Recommending context`\n    ````yaml\n    filesToAdd:\n      - api.py\n    classesToSummarize:\n    testsToAdd:\n    \n    ````\n  </message>\n  \n  <message type=ai>\n    \n    \n    No additional context insights found\n  </message>\n</task>\n\n"
+  } ],
+  "stream" : true,
+  "stream_options" : {
+    "include_usage" : true
+  },
+  "max_completion_tokens" : 50000,
+  "user" : "237f4ef9-3a42-4850-a635-615fca689856",
+  "reasoning_effort" : "low",
+  "prompt_cache_key" : "gpt-5-mini237f4ef9-3a42-4850-a635-615fca689856"
+}

@@ -1,0 +1,713 @@
+# Request to gemini-3-flash-preview:
+
+<message type=system>
+  You are an assistant that identifies relevant code context based on a goal and the existing relevant information.
+  You are given a goal, the current workspace contents (if any), and a list of files, each with either a summary of its classes or its full content.
+  
+  Analyze the provided information and determine which items are most relevant to achieving the goal.
+</message>
+
+<message type=user>
+  <workspace_summary>
+  # Screenshot of a 404 NOT_FOUND error message dialog.
+  
+  # api.py
+  - api.app
+  - api.analyzer
+  - api.CONFIG_FILE
+  - api.DATA_CACHE
+  - api.load_local_data
+  - api.save_local_data
+  - api.load_config
+  - api.save_config
+  - api.SettingsRequest
+  - api.KeywordGroup
+  - api.get_settings
+  - api.update_settings
+  - api.add_group
+  - api.delete_group
+  - api.ScrapeRequest
+  - api.health_check
+  - api.get_data
+  - api.run_scrape
+  
+  # frontend\package.json
+  
+  # frontend\vite.config.ts
+  - frontend.vite.config.ts
+  
+  # Discarded Context
+  
+  # Summary of frontend\vercel.json
+  
+  # Summary of requirements.txt
+  
+  # Summary of frontend\index.html
+  
+  # frontend\vercel.json
+  
+  # requirements.txt
+  
+  # frontend\index.html
+  </workspace_summary>
+</message>
+
+<message type=ai>
+  Thank you for the workspace summary.
+</message>
+
+<message type=user>
+  <available_files>
+  <file path='frontend\src\components\dashboard\Header.tsx'>
+  - frontend.src.components.dashboard.Header.tsx
+  - frontend.src.components.dashboard.HeaderProps
+    - apiConnected
+    - sheetsConnected
+  - frontend.src.components.dashboard.Header
+  - frontend.src.components.dashboard.Header.tsx.Header
+  </file>
+  
+  <file path='frontend\src\components\ui\sonner.tsx'>
+  - frontend.src.components.ui.sonner.tsx
+  - frontend.src.components.ui.sonner.tsx.ToasterProps
+  - frontend.src.components.ui.Toaster
+  - frontend.src.components.ui.sonner.tsx.Toaster
+  </file>
+  
+  <file path='frontend\src\components\ui\drawer.tsx'>
+  - frontend.src.components.ui.drawer.tsx
+  - frontend.src.components.ui.drawer.tsx.Drawer
+  - frontend.src.components.ui.Drawer
+  - frontend.src.components.ui.drawer.tsx.DrawerTrigger
+  - frontend.src.components.ui.drawer.tsx.DrawerPortal
+  - frontend.src.components.ui.drawer.tsx.DrawerClose
+  - frontend.src.components.ui.drawer.tsx.DrawerOverlay
+  - frontend.src.components.ui.drawer.tsx.DrawerContent
+  - frontend.src.components.ui.drawer.tsx.DrawerHeader
+  - frontend.src.components.ui.DrawerHeader
+  - frontend.src.components.ui.DrawerFooter
+  - frontend.src.components.ui.drawer.tsx.DrawerFooter
+  - frontend.src.components.ui.drawer.tsx.DrawerTitle
+  - frontend.src.components.ui.drawer.tsx.DrawerDescription
+  </file>
+  
+  <file path='frontend\src\components\ui\toggle-group.tsx'>
+  - frontend.src.components.ui.toggle-group.tsx
+  - frontend.src.components.ui.toggle-group.tsx.ToggleGroupContext
+  - frontend.src.components.ui.toggle-group.tsx.ToggleGroup
+  - frontend.src.components.ui.toggle-group.tsx.ToggleGroupItem
+  </file>
+  
+  <file path='frontend\src\components\ui\alert-dialog.tsx'>
+  - frontend.src.components.ui.alert-dialog.tsx
+  - frontend.src.components.ui.alert-dialog.tsx.AlertDialog
+  - frontend.src.components.ui.alert-dialog.tsx.AlertDialogTrigger
+  - frontend.src.components.ui.alert-dialog.tsx.AlertDialogPortal
+  - frontend.src.components.ui.alert-dialog.tsx.AlertDialogOverlay
+  - frontend.src.components.ui.alert-dialog.tsx.AlertDialogContent
+  - frontend.src.components.ui.alert-dialog.tsx.AlertDialogHeader
+  - frontend.src.components.ui.AlertDialogHeader
+  - frontend.src.components.ui.alert-dialog.tsx.AlertDialogFooter
+  - frontend.src.components.ui.AlertDialogFooter
+  - frontend.src.components.ui.alert-dialog.tsx.AlertDialogTitle
+  - frontend.src.components.ui.alert-dialog.tsx.AlertDialogDescription
+  - frontend.src.components.ui.alert-dialog.tsx.AlertDialogAction
+  - frontend.src.components.ui.alert-dialog.tsx.AlertDialogCancel
+  </file>
+  
+  <file path='frontend\src\components\dashboard\MetricCard.tsx'>
+  - frontend.src.components.dashboard.MetricCard.tsx
+  - frontend.src.components.dashboard.MetricCardProps
+    - title
+    - value
+    - change
+    - icon
+    - iconColor
+  - frontend.src.components.dashboard.MetricCard.tsx.iconColorClasses
+  - frontend.src.components.dashboard.MetricCard
+  - frontend.src.components.dashboard.MetricCard.tsx.MetricCard
+  </file>
+  
+  <file path='frontend\src\components\ui\toggle.tsx'>
+  - frontend.src.components.ui.toggle.tsx
+  - frontend.src.components.ui.toggle.tsx.toggleVariants
+  - frontend.src.components.ui.toggle.tsx.Toggle
+  </file>
+  
+  <file path='frontend\src\components\ui\input-otp.tsx'>
+  - frontend.src.components.ui.input-otp.tsx
+  - frontend.src.components.ui.input-otp.tsx.InputOTP
+  - frontend.src.components.ui.input-otp.tsx.InputOTPGroup
+  - frontend.src.components.ui.input-otp.tsx.InputOTPSlot
+  - frontend.src.components.ui.input-otp.tsx.InputOTPSeparator
+  </file>
+  
+  <file path='frontend\src\components\ui\input.tsx'>
+  - frontend.src.components.ui.input.tsx
+  - frontend.src.components.ui.input.tsx.Input
+  </file>
+  
+  <file path='frontend\src\components\ui\select.tsx'>
+  - frontend.src.components.ui.select.tsx
+  - frontend.src.components.ui.select.tsx.Select
+  - frontend.src.components.ui.select.tsx.SelectGroup
+  - frontend.src.components.ui.select.tsx.SelectValue
+  - frontend.src.components.ui.select.tsx.SelectTrigger
+  - frontend.src.components.ui.select.tsx.SelectScrollUpButton
+  - frontend.src.components.ui.select.tsx.SelectScrollDownButton
+  - frontend.src.components.ui.select.tsx.SelectContent
+  - frontend.src.components.ui.select.tsx.SelectLabel
+  - frontend.src.components.ui.select.tsx.SelectItem
+  - frontend.src.components.ui.select.tsx.SelectSeparator
+  </file>
+  
+  <file path='frontend\src\components\ui\radio-group.tsx'>
+  - frontend.src.components.ui.radio-group.tsx
+  - frontend.src.components.ui.radio-group.tsx.RadioGroup
+  - frontend.src.components.ui.radio-group.tsx.RadioGroupItem
+  </file>
+  
+  <file path='frontend\src\components\ui\dropdown-menu.tsx'>
+  - frontend.src.components.ui.dropdown-menu.tsx
+  - frontend.src.components.ui.dropdown-menu.tsx.DropdownMenu
+  - frontend.src.components.ui.dropdown-menu.tsx.DropdownMenuTrigger
+  - frontend.src.components.ui.dropdown-menu.tsx.DropdownMenuGroup
+  - frontend.src.components.ui.dropdown-menu.tsx.DropdownMenuPortal
+  - frontend.src.components.ui.dropdown-menu.tsx.DropdownMenuSub
+  - frontend.src.components.ui.dropdown-menu.tsx.DropdownMenuRadioGroup
+  - frontend.src.components.ui.dropdown-menu.tsx.DropdownMenuSubTrigger
+  - frontend.src.components.ui.dropdown-menu.tsx.DropdownMenuSubContent
+  - frontend.src.components.ui.dropdown-menu.tsx.DropdownMenuContent
+  - frontend.src.components.ui.dropdown-menu.tsx.DropdownMenuItem
+  - frontend.src.components.ui.dropdown-menu.tsx.DropdownMenuCheckboxItem
+  - frontend.src.components.ui.dropdown-menu.tsx.DropdownMenuRadioItem
+  - frontend.src.components.ui.dropdown-menu.tsx.DropdownMenuLabel
+  - frontend.src.components.ui.dropdown-menu.tsx.DropdownMenuSeparator
+  - frontend.src.components.ui.DropdownMenuShortcut
+  - frontend.src.components.ui.dropdown-menu.tsx.DropdownMenuShortcut
+  </file>
+  
+  <file path='frontend\src\components\ui\textarea.tsx'>
+  - frontend.src.components.ui.textarea.tsx
+  - frontend.src.components.ui.TextareaProps
+  - frontend.src.components.ui.textarea.tsx.Textarea
+  </file>
+  
+  <file path='frontend\src\components\ui\alert.tsx'>
+  - frontend.src.components.ui.alert.tsx
+  - frontend.src.components.ui.alert.tsx.alertVariants
+  - frontend.src.components.ui.alert.tsx.Alert
+  - frontend.src.components.ui.alert.tsx.AlertTitle
+  - frontend.src.components.ui.alert.tsx.AlertDescription
+  </file>
+  
+  <file path='frontend\src\components\ui\label.tsx'>
+  - frontend.src.components.ui.label.tsx
+  - frontend.src.components.ui.label.tsx.labelVariants
+  - frontend.src.components.ui.label.tsx.Label
+  </file>
+  
+  <file path='frontend\src\components\ui\pagination.tsx'>
+  - frontend.src.components.ui.pagination.tsx
+  - frontend.src.components.ui.pagination.tsx.Pagination
+  - frontend.src.components.ui.Pagination
+  - frontend.src.components.ui.pagination.tsx.PaginationContent
+  - frontend.src.components.ui.pagination.tsx.PaginationItem
+  - frontend.src.components.ui.pagination.tsx.PaginationLinkProps
+  - frontend.src.components.ui.pagination.tsx.PaginationLink
+  - frontend.src.components.ui.PaginationLink
+  - frontend.src.components.ui.PaginationPrevious
+  - frontend.src.components.ui.pagination.tsx.PaginationPrevious
+  - frontend.src.components.ui.PaginationNext
+  - frontend.src.components.ui.pagination.tsx.PaginationNext
+  - frontend.src.components.ui.PaginationEllipsis
+  - frontend.src.components.ui.pagination.tsx.PaginationEllipsis
+  </file>
+  
+  <file path='frontend\src\pages\Index.tsx'>
+  - frontend.src.pages.Index.tsx
+  - frontend.src.pages.Index.tsx.Index
+  - frontend.src.pages.Index
+  </file>
+  
+  <file path='frontend\src\hooks\useTikTokData.ts'>
+  - frontend.src.hooks.useTikTokData.ts
+  - frontend.src.hooks.useTikTokData
+  - frontend.src.hooks.useTikTokData.ts.useTikTokData
+  </file>
+  
+  <file path='frontend\src\components\ui\breadcrumb.tsx'>
+  - frontend.src.components.ui.breadcrumb.tsx
+  - frontend.src.components.ui.breadcrumb.tsx.Breadcrumb
+  - frontend.src.components.ui.breadcrumb.tsx.BreadcrumbList
+  - frontend.src.components.ui.breadcrumb.tsx.BreadcrumbItem
+  - frontend.src.components.ui.breadcrumb.tsx.BreadcrumbLink
+  - frontend.src.components.ui.breadcrumb.tsx.BreadcrumbPage
+  - frontend.src.components.ui.BreadcrumbSeparator
+  - frontend.src.components.ui.breadcrumb.tsx.BreadcrumbSeparator
+  - frontend.src.components.ui.BreadcrumbEllipsis
+  - frontend.src.components.ui.breadcrumb.tsx.BreadcrumbEllipsis
+  </file>
+  
+  <file path='frontend\src\App.tsx'>
+  - frontend.src.App.tsx
+  - frontend.src.App.tsx.queryClient
+  - frontend.src.App
+  - frontend.src.App.tsx.App
+  </file>
+  
+  <file path='frontend\src\components\dashboard\CreatorLeaderboard.tsx'>
+  - frontend.src.components.dashboard.CreatorLeaderboard.tsx
+  - frontend.src.components.dashboard.CreatorLeaderboard.tsx.rankColors
+  - frontend.src.components.dashboard.CreatorLeaderboard
+  - frontend.src.components.dashboard.CreatorLeaderboard.tsx.CreatorLeaderboard
+  </file>
+  
+  <file path='frontend\src\components\ui\separator.tsx'>
+  - frontend.src.components.ui.separator.tsx
+  - frontend.src.components.ui.separator.tsx.Separator
+  </file>
+  
+  <file path='frontend\vitest.config.ts'>
+  - frontend.vitest.config.ts
+  </file>
+  
+  <file path='frontend\src\components\ui\carousel.tsx'>
+  - frontend.src.components.ui.carousel.tsx
+  - frontend.src.components.ui.carousel.tsx.CarouselApi
+  - frontend.src.components.ui.carousel.tsx.UseCarouselParameters
+  - frontend.src.components.ui.carousel.tsx.CarouselOptions
+  - frontend.src.components.ui.carousel.tsx.CarouselPlugin
+  - frontend.src.components.ui.carousel.tsx.CarouselProps
+  - frontend.src.components.ui.carousel.tsx.CarouselContextProps
+  - frontend.src.components.ui.carousel.tsx.CarouselContext
+  - frontend.src.components.ui.useCarousel
+  - frontend.src.components.ui.carousel.tsx.Carousel
+  - frontend.src.components.ui.carousel.tsx.CarouselContent
+  - frontend.src.components.ui.carousel.tsx.CarouselItem
+  - frontend.src.components.ui.carousel.tsx.CarouselPrevious
+  - frontend.src.components.ui.carousel.tsx.CarouselNext
+  </file>
+  
+  <file path='frontend\src\components\ui\badge.tsx'>
+  - frontend.src.components.ui.badge.tsx
+  - frontend.src.components.ui.badge.tsx.badgeVariants
+  - frontend.src.components.ui.BadgeProps
+  - frontend.src.components.ui.Badge
+  </file>
+  
+  <file path='frontend\src\components\ui\collapsible.tsx'>
+  - frontend.src.components.ui.collapsible.tsx
+  - frontend.src.components.ui.collapsible.tsx.Collapsible
+  - frontend.src.components.ui.collapsible.tsx.CollapsibleTrigger
+  - frontend.src.components.ui.collapsible.tsx.CollapsibleContent
+  </file>
+  
+  <file path='frontend\src\components\ui\context-menu.tsx'>
+  - frontend.src.components.ui.context-menu.tsx
+  - frontend.src.components.ui.context-menu.tsx.ContextMenu
+  - frontend.src.components.ui.context-menu.tsx.ContextMenuTrigger
+  - frontend.src.components.ui.context-menu.tsx.ContextMenuGroup
+  - frontend.src.components.ui.context-menu.tsx.ContextMenuPortal
+  - frontend.src.components.ui.context-menu.tsx.ContextMenuSub
+  - frontend.src.components.ui.context-menu.tsx.ContextMenuRadioGroup
+  - frontend.src.components.ui.context-menu.tsx.ContextMenuSubTrigger
+  - frontend.src.components.ui.context-menu.tsx.ContextMenuSubContent
+  - frontend.src.components.ui.context-menu.tsx.ContextMenuContent
+  - frontend.src.components.ui.context-menu.tsx.ContextMenuItem
+  - frontend.src.components.ui.context-menu.tsx.ContextMenuCheckboxItem
+  - frontend.src.components.ui.context-menu.tsx.ContextMenuRadioItem
+  - frontend.src.components.ui.context-menu.tsx.ContextMenuLabel
+  - frontend.src.components.ui.context-menu.tsx.ContextMenuSeparator
+  - frontend.src.components.ui.context-menu.tsx.ContextMenuShortcut
+  - frontend.src.components.ui.ContextMenuShortcut
+  </file>
+  
+  <file path='frontend\src\components\dashboard\VideoCard.tsx'>
+  - frontend.src.components.dashboard.VideoCard.tsx
+  - frontend.src.components.dashboard.VideoCardProps
+    - video
+  - frontend.src.components.dashboard.VideoCard.tsx.sentimentColors
+  - frontend.src.components.dashboard.VideoCard.tsx.VideoCard
+  - frontend.src.components.dashboard.VideoCard
+  </file>
+  
+  <file path='frontend\src\components\ui\aspect-ratio.tsx'>
+  - frontend.src.components.ui.aspect-ratio.tsx
+  - frontend.src.components.ui.aspect-ratio.tsx.AspectRatio
+  </file>
+  
+  <file path='frontend\src\test\setup.ts'>
+  - frontend.src.test.setup.ts
+  </file>
+  
+  <file path='frontend\src\components\ui\command.tsx'>
+  - frontend.src.components.ui.command.tsx
+  - frontend.src.components.ui.command.tsx.Command
+  - frontend.src.components.ui.CommandDialogProps
+  - frontend.src.components.ui.CommandDialog
+  - frontend.src.components.ui.command.tsx.CommandDialog
+  - frontend.src.components.ui.command.tsx.CommandInput
+  - frontend.src.components.ui.command.tsx.CommandList
+  - frontend.src.components.ui.command.tsx.CommandEmpty
+  - frontend.src.components.ui.command.tsx.CommandGroup
+  - frontend.src.components.ui.command.tsx.CommandSeparator
+  - frontend.src.components.ui.command.tsx.CommandItem
+  - frontend.src.components.ui.CommandShortcut
+  - frontend.src.components.ui.command.tsx.CommandShortcut
+  </file>
+  
+  <file path='frontend\src\components\ui\progress.tsx'>
+  - frontend.src.components.ui.progress.tsx
+  - frontend.src.components.ui.progress.tsx.Progress
+  </file>
+  
+  <file path='frontend\src\test\mockData.test.ts'>
+  - frontend.src.test.mockData.test.ts
+  </file>
+  
+  <file path='frontend\src\pages\NotFound.tsx'>
+  - frontend.src.pages.NotFound.tsx
+  - frontend.src.pages.NotFound
+  - frontend.src.pages.NotFound.tsx.NotFound
+  </file>
+  
+  <file path='frontend\src\components\ui\chart.tsx'>
+  - frontend.src.components.ui.chart.tsx
+  - frontend.src.components.ui.chart.tsx.THEMES
+  - frontend.src.components.ui.chart.tsx.ChartConfig
+  - frontend.src.components.ui.chart.tsx.ChartContextProps
+  - frontend.src.components.ui.chart.tsx.ChartContext
+  - frontend.src.components.ui.useChart
+  - frontend.src.components.ui.chart.tsx.ChartContainer
+  - frontend.src.components.ui.chart.tsx.ChartStyle
+  - frontend.src.components.ui.ChartStyle
+  - frontend.src.components.ui.chart.tsx.ChartTooltip
+  - frontend.src.components.ui.chart.tsx.ChartTooltipContent
+  - frontend.src.components.ui.chart.tsx.ChartLegend
+  - frontend.src.components.ui.chart.tsx.ChartLegendContent
+  - frontend.src.components.ui.getPayloadConfigFromPayload
+  </file>
+  
+  <file path='frontend\src\components\ui\dialog.tsx'>
+  - frontend.src.components.ui.dialog.tsx
+  - frontend.src.components.ui.dialog.tsx.Dialog
+  - frontend.src.components.ui.dialog.tsx.DialogTrigger
+  - frontend.src.components.ui.dialog.tsx.DialogPortal
+  - frontend.src.components.ui.dialog.tsx.DialogClose
+  - frontend.src.components.ui.dialog.tsx.DialogOverlay
+  - frontend.src.components.ui.dialog.tsx.DialogContent
+  - frontend.src.components.ui.dialog.tsx.DialogHeader
+  - frontend.src.components.ui.DialogHeader
+  - frontend.src.components.ui.dialog.tsx.DialogFooter
+  - frontend.src.components.ui.DialogFooter
+  - frontend.src.components.ui.dialog.tsx.DialogTitle
+  - frontend.src.components.ui.dialog.tsx.DialogDescription
+  </file>
+  
+  <file path='frontend\src\components\ui\toaster.tsx'>
+  - frontend.src.components.ui.toaster.tsx
+  - frontend.src.components.ui.Toaster
+  </file>
+  
+  <file path='frontend\src\components\NavLink.tsx'>
+  - frontend.src.components.NavLink.tsx
+  - frontend.src.components.NavLinkCompatProps
+    - className
+    - activeClassName
+    - pendingClassName
+  - frontend.src.components.NavLink.tsx.NavLink
+  </file>
+  
+  <file path='frontend\src\main.tsx'>
+  - frontend.src.main.tsx
+  </file>
+  
+  <file path='frontend\src\components\ui\switch.tsx'>
+  - frontend.src.components.ui.switch.tsx
+  - frontend.src.components.ui.switch.tsx.Switch
+  </file>
+  
+  <file path='frontend\src\components\dashboard\Sidebar.tsx'>
+  - frontend.src.components.dashboard.Sidebar.tsx
+  - frontend.src.components.dashboard.NavItem
+    - icon
+    - label
+    - active
+  - frontend.src.components.dashboard.Sidebar.tsx.navItems
+  - frontend.src.components.dashboard.SidebarProps
+    - currentView
+    - onNavigate
+  - frontend.src.components.dashboard.Sidebar.tsx.Sidebar
+  - frontend.src.components.dashboard.Sidebar
+  </file>
+  
+  <file path='frontend\src\components\ui\table.tsx'>
+  - frontend.src.components.ui.table.tsx
+  - frontend.src.components.ui.table.tsx.Table
+  - frontend.src.components.ui.table.tsx.TableHeader
+  - frontend.src.components.ui.table.tsx.TableBody
+  - frontend.src.components.ui.table.tsx.TableFooter
+  - frontend.src.components.ui.table.tsx.TableRow
+  - frontend.src.components.ui.table.tsx.TableHead
+  - frontend.src.components.ui.table.tsx.TableCell
+  - frontend.src.components.ui.table.tsx.TableCaption
+  </file>
+  
+  <file path='frontend\src\hooks\use-mobile.tsx'>
+  - frontend.src.hooks.use-mobile.tsx
+  - frontend.src.hooks.use-mobile.tsx.MOBILE_BREAKPOINT
+  - frontend.src.hooks.useIsMobile
+  </file>
+  
+  <file path='frontend\src\components\ui\accordion.tsx'>
+  - frontend.src.components.ui.accordion.tsx
+  - frontend.src.components.ui.accordion.tsx.Accordion
+  - frontend.src.components.ui.accordion.tsx.AccordionItem
+  - frontend.src.components.ui.accordion.tsx.AccordionTrigger
+  - frontend.src.components.ui.accordion.tsx.AccordionContent
+  </file>
+  
+  <file path='frontend\src\components\ui\scroll-area.tsx'>
+  - frontend.src.components.ui.scroll-area.tsx
+  - frontend.src.components.ui.scroll-area.tsx.ScrollArea
+  - frontend.src.components.ui.scroll-area.tsx.ScrollBar
+  </file>
+  
+  <file path='frontend\src\components\dashboard\TrendingHashtags.tsx'>
+  - frontend.src.components.dashboard.TrendingHashtags.tsx
+  - frontend.src.components.dashboard.TrendingHashtags.tsx.trendIcons
+  - frontend.src.components.dashboard.TrendingHashtags.tsx.trendColors
+  - frontend.src.components.dashboard.TrendingHashtags
+  - frontend.src.components.dashboard.TrendingHashtags.tsx.TrendingHashtags
+  </file>
+  
+  <file path='frontend\src\components\ui\button.tsx'>
+  - frontend.src.components.ui.button.tsx
+  - frontend.src.components.ui.button.tsx.buttonVariants
+  - frontend.src.components.ui.ButtonProps
+    - asChild
+  - frontend.src.components.ui.button.tsx.Button
+  </file>
+  
+  <file path='frontend\src\components\ui\slider.tsx'>
+  - frontend.src.components.ui.slider.tsx
+  - frontend.src.components.ui.slider.tsx.Slider
+  </file>
+  
+  <file path='frontend\src\test\example.test.ts'>
+  - frontend.src.test.example.test.ts
+  </file>
+  
+  <file path='frontend\src\components\dashboard\EngagementChart.tsx'>
+  - frontend.src.components.dashboard.EngagementChart.tsx
+  - frontend.src.components.dashboard.EngagementChartProps
+    - data
+    - onPointClick
+  - frontend.src.components.dashboard.EngagementChart
+  - frontend.src.components.dashboard.EngagementChart.tsx.EngagementChart
+  </file>
+  
+  <file path='frontend\src\components\ui\use-toast.ts'>
+  - frontend.src.components.ui.use-toast.ts
+  </file>
+  
+  <file path='frontend\src\components\dashboard\VideoTable.tsx'>
+  - frontend.src.components.dashboard.VideoTable.tsx
+  - frontend.src.components.dashboard.VideoTableProps
+    - videos
+  - frontend.src.components.dashboard.VideoTable.tsx.sentimentColors
+  - frontend.src.components.dashboard.VideoTable
+  - frontend.src.components.dashboard.VideoTable.tsx.VideoTable
+  </file>
+  
+  <file path='frontend\src\components\ui\sidebar.tsx'>
+  - frontend.src.components.ui.sidebar.tsx
+  - frontend.src.components.ui.sidebar.tsx.SIDEBAR_COOKIE_NAME
+  - frontend.src.components.ui.sidebar.tsx.SIDEBAR_COOKIE_MAX_AGE
+  - frontend.src.components.ui.sidebar.tsx.SIDEBAR_WIDTH
+  - frontend.src.components.ui.sidebar.tsx.SIDEBAR_WIDTH_MOBILE
+  - frontend.src.components.ui.sidebar.tsx.SIDEBAR_WIDTH_ICON
+  - frontend.src.components.ui.sidebar.tsx.SIDEBAR_KEYBOARD_SHORTCUT
+  - frontend.src.components.ui.sidebar.tsx.SidebarContext
+  - frontend.src.components.ui.useSidebar
+  - frontend.src.components.ui.sidebar.tsx.SidebarProvider
+  - frontend.src.components.ui.sidebar.tsx.Sidebar
+  - frontend.src.components.ui.sidebar.tsx.SidebarTrigger
+  - frontend.src.components.ui.sidebar.tsx.SidebarRail
+  - frontend.src.components.ui.sidebar.tsx.SidebarInset
+  - frontend.src.components.ui.sidebar.tsx.SidebarInput
+  - frontend.src.components.ui.sidebar.tsx.SidebarHeader
+  - frontend.src.components.ui.sidebar.tsx.SidebarFooter
+  - frontend.src.components.ui.sidebar.tsx.SidebarSeparator
+  - frontend.src.components.ui.sidebar.tsx.SidebarContent
+  - frontend.src.components.ui.sidebar.tsx.SidebarGroup
+  - frontend.src.components.ui.sidebar.tsx.SidebarGroupLabel
+  - frontend.src.components.ui.sidebar.tsx.SidebarGroupAction
+  - frontend.src.components.ui.sidebar.tsx.SidebarGroupContent
+  - frontend.src.components.ui.sidebar.tsx.SidebarMenu
+  - frontend.src.components.ui.sidebar.tsx.SidebarMenuItem
+  - frontend.src.components.ui.sidebar.tsx.sidebarMenuButtonVariants
+  - frontend.src.components.ui.sidebar.tsx.SidebarMenuButton
+  - frontend.src.components.ui.sidebar.tsx.SidebarMenuAction
+  - frontend.src.components.ui.sidebar.tsx.SidebarMenuBadge
+  - frontend.src.components.ui.sidebar.tsx.SidebarMenuSkeleton
+  - frontend.src.components.ui.sidebar.tsx.SidebarMenuSub
+  - frontend.src.components.ui.sidebar.tsx.SidebarMenuSubItem
+  - frontend.src.components.ui.sidebar.tsx.SidebarMenuSubButton
+  </file>
+  
+  <file path='frontend\src\components\ui\navigation-menu.tsx'>
+  - frontend.src.components.ui.navigation-menu.tsx
+  - frontend.src.components.ui.navigation-menu.tsx.NavigationMenu
+  - frontend.src.components.ui.navigation-menu.tsx.NavigationMenuList
+  - frontend.src.components.ui.navigation-menu.tsx.NavigationMenuItem
+  - frontend.src.components.ui.navigation-menu.tsx.navigationMenuTriggerStyle
+  - frontend.src.components.ui.navigation-menu.tsx.NavigationMenuTrigger
+  - frontend.src.components.ui.navigation-menu.tsx.NavigationMenuContent
+  - frontend.src.components.ui.navigation-menu.tsx.NavigationMenuLink
+  - frontend.src.components.ui.navigation-menu.tsx.NavigationMenuViewport
+  - frontend.src.components.ui.navigation-menu.tsx.NavigationMenuIndicator
+  </file>
+  
+  <file path='frontend\tailwind.config.ts'>
+  - frontend.tailwind.config.ts
+  </file>
+  
+  <file path='frontend\src\components\ui\menubar.tsx'>
+  - frontend.src.components.ui.menubar.tsx
+  - frontend.src.components.ui.menubar.tsx.MenubarMenu
+  - frontend.src.components.ui.menubar.tsx.MenubarGroup
+  - frontend.src.components.ui.menubar.tsx.MenubarPortal
+  - frontend.src.components.ui.menubar.tsx.MenubarSub
+  - frontend.src.components.ui.menubar.tsx.MenubarRadioGroup
+  - frontend.src.components.ui.menubar.tsx.Menubar
+  - frontend.src.components.ui.menubar.tsx.MenubarTrigger
+  - frontend.src.components.ui.menubar.tsx.MenubarSubTrigger
+  - frontend.src.components.ui.menubar.tsx.MenubarSubContent
+  - frontend.src.components.ui.menubar.tsx.MenubarContent
+  - frontend.src.components.ui.menubar.tsx.MenubarItem
+  - frontend.src.components.ui.menubar.tsx.MenubarCheckboxItem
+  - frontend.src.components.ui.menubar.tsx.MenubarRadioItem
+  - frontend.src.components.ui.menubar.tsx.MenubarLabel
+  - frontend.src.components.ui.menubar.tsx.MenubarSeparator
+  - frontend.src.components.ui.MenubarShortcut
+  - frontend.src.components.ui.menubar.tsx.MenubarShortcut
+  </file>
+  
+  <file path='frontend\src\components\ui\toast.tsx'>
+  - frontend.src.components.ui.toast.tsx
+  - frontend.src.components.ui.toast.tsx.ToastProvider
+  - frontend.src.components.ui.toast.tsx.ToastViewport
+  - frontend.src.components.ui.toast.tsx.toastVariants
+  - frontend.src.components.ui.toast.tsx.Toast
+  - frontend.src.components.ui.toast.tsx.ToastAction
+  - frontend.src.components.ui.toast.tsx.ToastClose
+  - frontend.src.components.ui.toast.tsx.ToastTitle
+  - frontend.src.components.ui.toast.tsx.ToastDescription
+  - frontend.src.components.ui.toast.tsx.ToastProps
+  - frontend.src.components.ui.toast.tsx.ToastActionElement
+  </file>
+  
+  <file path='frontend\eslint.config.js'>
+  - frontend.eslint.config.js
+  </file>
+  
+  <file path='frontend\src\components\ui\calendar.tsx'>
+  - frontend.src.components.ui.calendar.tsx
+  - frontend.src.components.ui.calendar.tsx.CalendarProps
+  - frontend.src.components.ui.Calendar
+  </file>
+  
+  <file path='frontend\src\components\ui\form.tsx'>
+  - frontend.src.components.ui.form.tsx
+  - frontend.src.components.ui.form.tsx.Form
+  - frontend.src.components.ui.form.tsx.FormFieldContextValue
+  - frontend.src.components.ui.form.tsx.FormFieldContext
+  - frontend.src.components.ui.form.tsx.FormField
+  - frontend.src.components.ui.FormField
+  - frontend.src.components.ui.form.tsx.useFormField
+  - frontend.src.components.ui.useFormField
+  - frontend.src.components.ui.form.tsx.FormItemContextValue
+  - frontend.src.components.ui.form.tsx.FormItemContext
+  - frontend.src.components.ui.form.tsx.FormItem
+  - frontend.src.components.ui.form.tsx.FormLabel
+  - frontend.src.components.ui.form.tsx.FormControl
+  - frontend.src.components.ui.form.tsx.FormDescription
+  - frontend.src.components.ui.form.tsx.FormMessage
+  </file>
+  </available_files>
+  
+  <discarded_context>
+  - frontend\src\main.tsx: Key facts: Mounts App to #root.. Reason: Standard entry point, not relevant for routing config.
+  - frontend\src\pages\NotFound.tsx: Key facts: Logs 404 errors to console.. Reason: Component implementation details irrelevant for routing config.
+  - frontend\README.md: Key facts: Deployment instructions: Root Directory 'frontend', Output 'dist', Build 'npm run build'.. Reason: General info, redundant with specific file contents.
+  - frontend\src\App.tsx: Key facts: React Router uses BrowserRouter. Routes: / -> Index, * -> NotFound.. Reason: Client-side routing confirmed; implementation details not needed for deployment config.
+  - README.md: Key facts: TikTok Social Listening & Analytics Dashboard. Python backend + React frontend.. Reason: General project info, not needed for specific Vercel config debugging.
+  </discarded_context>
+  
+  
+  <goal>
+  Push changes to this github and i will depoly it. Hope it works. 
+  https://github.com/franciskingk/nendo-tiktok-bot.git
+  </goal>
+  Identify code context relevant to the goal by calling `recommendContext`.
+  
+  Before calling `recommendContext`, reason step-by-step:
+  - Identify all class names explicitly mentioned in the <goal>.
+  - Identify all class types used in the <workspace> code.
+  - Think about how you would solve the <goal>, and identify additional classes and files relevant to your plan.
+    For example, if the plan involves instantiating class Foo, or calling a method of class Bar,
+    then Foo and Bar are relevant classes, and their source files may be relevant files.
+  - Identify test, spec, e2e, or integration files that verify behavior related to the goal.
+  - It's possible that files that were previously discarded are newly relevant, but when in doubt,
+    do not recommend files that are listed in the <discarded_context> section.
+  - Compare this combined list against the items in the provided section (either summaries OR files content).
+  
+  Selection rubric (important):
+  - Prefer `classesToSummarize` when you need navigational context (APIs, types, call sites) and are not confident the file will be edited.
+  - Prefer `testsToAdd` for tests/specs that clarify intended behavior or will likely need updating to verify the goal.
+  - Use `filesToAdd` only for files you expect to edit or where exact implementation details are required.
+  
+  Then call the `recommendContext` tool with the appropriate entries:
+  
+  - Populate `filesToAdd` with full (relative) paths of files to edit or whose full text is necessary. Must exactly match one of the file paths provided in this message.
+  - Populate `classesToSummarize` with fully-qualified names of classes whose APIs or structure are relevant but which do not need to be edited.
+  - Populate `testsToAdd` with full (relative) paths of related test/spec/e2e/integration files that help understand or verify the goal. These will be included as summaries/skeletons only (not full file contents). Must exactly match one of the file paths provided in this message.
+  
+  Either or all arguments may be empty. Do NOT invent or guess file paths. Only use file paths that are present in the file list provided in this message. If no file list is provided, call `recommendContext` with empty lists.
+</message>
+
+
+
+# Tools:
+
+recommendContext
+
+# Response:
+
+## reasoningContent
+
+
+## text
+
+
+## toolExecutionRequests
+[ {
+  "id" : "",
+  "name" : "recommendContext",
+  "arguments" : "{\"classesToSummarize\":[],\"filesToAdd\":[\"frontend\\\\vercel.json\",\"api.py\",\"frontend\\\\package.json\",\"frontend\\\\vite.config.ts\"],\"testsToAdd\":[]}"
+} ]
+
+## metadata
+{
+  "modelName" : "gemini-3-flash-preview",
+  "thinkingTokens" : 0,
+  "created" : "2026-02-20 14:43:14",
+  "finishReason" : "STOP",
+  "serviceTier" : "DEFAULT",
+  "inputTokens" : 8551,
+  "cachedInputTokens" : 0,
+  "outputTokens" : 54,
+  "elapsedMs" : 2640
+}

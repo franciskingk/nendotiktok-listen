@@ -1,0 +1,18 @@
+{
+  "model" : "gpt-5-mini",
+  "messages" : [ {
+    "role" : "system",
+    "content" : "You are an expert software engineer that generates concise summaries of code-related text.\n\nReply only with the summary, without any additional text, explanations, or line breaks.\n"
+  }, {
+    "role" : "user",
+    "content" : "Give a detailed but concise summary of this task.\nA third party should be able to understand what happened without reference to the original.\nFocus on information that would be useful for someone doing further work on the project described in the task.\n\nHere is the task to summarize. Do not include XML tags or other markup.\n<task sequence=3>\n  <message type=user>\n    Refactor `frontend/src/hooks/useTikTokData.ts` to replace all hardcoded instances of `http://127.0.0.1:8001` with a dynamic `API_BASE_URL` constant. \n    The constant should be derived from `import.meta.env.VITE_API_URL`, falling back to `http://127.0.0.1:8001` only if the environment variable is not set.\n    \n    Create a `frontend/.env.example` file documenting `VITE_API_URL`.\n    \n    **Acceptance:**\n    Check that `frontend/src/hooks/useTikTokData.ts` no longer contains `http://127.0.0.1:8001` and instead uses `import.meta.env.VITE_API_URL`.\n    Verify `frontend/.env.example` exists and includes `VITE_API_URL`.\n    Verify `frontend/.env` is in `.gitignore` (if gitignore exists).\n    \n    **Key Locations:**\n    frontend/src/hooks/useTikTokData.ts\n    frontend/.env.example\n    \n    **Key Discoveries:**\n    frontend/src/hooks/useTikTokData.ts has multiple fetch calls to localhost.\n  </message>\n  \n  <message type=ai>\n    \n    **Brokk Context Engine** analyzing repository context…\n  </message>\n  \n  <message type=ai>\n    Reasoning:\n    \n    \n    `Recommending context`\n    ````yaml\n    filesToAdd:\n      - frontend/src/hooks/useTikTokData.ts\n    classesToSummarize:\n    testsToAdd:\n    \n    ````\n  </message>\n  \n  <message type=ai>\n    `Adding context to workspace`\n    ````yaml\n    fragmentCount: 1\n    fragments:\n      - .gitignore\n    \n    ````\n    \n    \n    **Brokk Context Engine** complete — contextual insights added to Workspace.\n  </message>\n</task>\n\n"
+  } ],
+  "stream" : true,
+  "stream_options" : {
+    "include_usage" : true
+  },
+  "max_completion_tokens" : 50000,
+  "user" : "237f4ef9-3a42-4850-a635-615fca689856",
+  "reasoning_effort" : "low",
+  "prompt_cache_key" : "gpt-5-mini237f4ef9-3a42-4850-a635-615fca689856"
+}

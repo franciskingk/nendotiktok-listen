@@ -1,5 +1,4 @@
 fastapi
-uvicorn
 pydantic
 pandas
 requests
@@ -10,3 +9,4 @@ google-auth-oauthlib
 google-auth-httplib2
 vaderSentiment
 plotly
+openpyxl

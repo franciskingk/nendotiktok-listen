@@ -1,0 +1,1528 @@
+# Request to gemini-3-flash-preview:
+
+<message type=system>
+  You are an assistant that identifies relevant code context based on a goal and the existing relevant information.
+  You are given a goal, the current workspace contents (if any), and a list of files, each with either a summary of its classes or its full content.
+  
+  Analyze the provided information and determine which items are most relevant to achieving the goal.
+</message>
+
+<message type=user>
+  <workspace>
+  [Image content provided out of band]
+  
+  <fragment description="api.py">
+  from fastapi import FastAPI, HTTPException, Request
+  from fastapi.middleware.cors import CORSMiddleware
+  from pydantic import BaseModel
+  from typing import Optional, List, Dict, Any
+  import os
+  import json
+  from datetime import datetime
+  import pandas as pd
+  import asyncio
+  
+  # Import existing modules
+  from scraper import scrape_hashtag_sync, scrape_user_sync, scrape_search_sync
+  from analysis import TikTokAnalyzer
+  from sheets import SheetsManager
+  
+  app = FastAPI(title="TikTok Pulse API")
+  
+  # Configure CORS
+  app.add_middleware(
+      CORSMiddleware,
+      allow_origins=["*"],  # In production, specify the actual frontend URL
+      allow_credentials=True,
+      allow_methods=["*"],
+      allow_headers=["*"],
+  )
+  
+  # Initialize Analyzer
+  analyzer = TikTokAnalyzer()
+  
+  CONFIG_FILE = "config.json"
+  DATA_CACHE = "data_cache.json"
+  
+  def load_local_data():
+      if os.path.exists(DATA_CACHE):
+          try:
+              with open(DATA_CACHE, "r") as f:
+                  return json.load(f)
+          except:
+              pass
+      return {"videos": [], "comments": []}
+  
+  def save_local_data(data):
+      # Load existing to avoid overwriting all
+      existing = load_local_data()
+      
+      # Merge videos (deduplicate by video_id)
+      video_ids = {v['video_id'] for v in existing['videos']}
+      for v in data.get('videos', []):
+          if str(v['video_id']) not in video_ids:
+              existing['videos'].append(v)
+              video_ids.add(str(v['video_id']))
+              
+      # Merge comments (deduplicate by comment_id)
+      comment_ids = {c['comment_id'] for c in existing['comments']}
+      for c in data.get('comments', []):
+          if str(c['comment_id']) not in comment_ids:
+              existing['comments'].append(c)
+              comment_ids.add(str(c['comment_id']))
+              
+      with open(DATA_CACHE, "w") as f:
+          json.dump(existing, f)
+  
+  def load_config():
+      if os.path.exists(CONFIG_FILE):
+          try:
+              with open(CONFIG_FILE, "r") as f:
+                  config = json.load(f)
+                  if "groups" not in config:
+                      config["groups"] = []
+                  return config
+          except:
+              pass
+      return {"sheet_url": "", "apify_token": "", "groups": []}
+  
+  def save_config(config):
+      with open(CONFIG_FILE, "w") as f:
+          json.dump(config, f)
+  
+  class SettingsRequest(BaseModel):
+      sheet_url: str
+      apify_token: Optional[str] = None
+  
+  class KeywordGroup(BaseModel):
+      name: str
+      keywords: List[str]
+      exclude_keywords: List[str] = []
+      exact_match: bool = False
+  
+  @app.get("/api/settings")
+  def get_settings():
+      return load_config()
+  
+  @app.post("/api/settings")
+  def update_settings(request: SettingsRequest):
+      try:
+          config = load_config()
+          config["sheet_url"] = request.sheet_url
+          if request.apify_token is not None:
+              config["apify_token"] = request.apify_token
+          save_config(config)
+          print(f"DEBUG: Saved config: {config}")
+          return {"success": True, "config": config}
+      except Exception as e:
+          print(f"DEBUG ERROR: {e}")
+          raise HTTPException(status_code=500, detail=str(e))
+  
+  @app.post("/api/groups")
+  def add_group(group: KeywordGroup):
+      config = load_config()
+      # Remove existing group with same name if exists
+      config["groups"] = [g for g in config["groups"] if g["name"] != group.name]
+      config["groups"].append(group.dict())
+      save_config(config)
+      return {"success": True, "groups": config["groups"]}
+  
+  @app.delete("/api/groups/{name}")
+  def delete_group(name: str):
+      config = load_config()
+      config["groups"] = [g for g in config["groups"] if g["name"] != name]
+      save_config(config)
+      return {"success": True, "groups": config["groups"]}
+  
+  class ScrapeRequest(BaseModel):
+      scrape_type: str  # "Hashtag", "Username", "Keyword"
+      search_input: str
+      video_count: Optional[int] = 50
+      since_date: Optional[str] = None
+      apify_token: str
+      scrape_comments: bool = False
+      comments_limit: Optional[int] = 0
+  
+  @app.get("/api/health")
+  def health_check():
+      return {
+          "status": "healthy", 
+          "timestamp": datetime.now().isoformat(),
+          "credentials_found": os.path.exists("credentials.json")
+      }
+  
+  @app.get("/api/data")
+  async def get_data():
+      try:
+          config = load_config()
+          local_data = load_local_data()
+          
+          videos = local_data.get("videos", [])
+          comments = local_data.get("comments", [])
+          
+          sheet_url = config.get("sheet_url")
+          manager = SheetsManager(sheet_url=sheet_url if sheet_url else None)
+          
+          if manager.connect():
+              df_videos = manager.get_all_data()
+              df_comments = manager.get_all_comments()
+              
+              if not df_videos.empty:
+                  # Merge Sheets data into the list, avoiding duplicates from local cache
+                  sheet_videos = df_videos.to_dict(orient='records')
+                  local_ids = {str(v['video_id']) for v in videos}
+                  for v in sheet_videos:
+                      if str(v['video_id']) not in local_ids:
+                          videos.append(v)
+              
+              if not df_comments.empty:
+                  sheet_comments = df_comments.to_dict(orient='records')
+                  local_c_ids = {str(c['comment_id']) for c in comments}
+                  for c in sheet_comments:
+                      if str(c['comment_id']) not in local_c_ids:
+                          comments.append(c)
+  
+          # Convert list to DataFrame for analysis
+          df_videos = pd.DataFrame(videos)
+          df_comments = pd.DataFrame(comments)
+          
+          if not df_videos.empty:
+              df_videos = analyzer.calculate_engagement_rate(df_videos)
+              df_videos = analyzer.add_sentiment_analysis(df_videos, method='vader')
+              if 'publish_date' in df_videos.columns:
+                  df_videos['publish_date'] = pd.to_datetime(df_videos['publish_date']).dt.strftime('%Y-%m-%d %H:%M:%S')
+              if 'timestamp' in df_videos.columns:
+                  df_videos['timestamp'] = pd.to_datetime(df_videos['timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
+          
+          if not df_comments.empty:
+              df_comments = analyzer.add_sentiment_analysis(df_comments, method='vader', text_column='text')
+              if 'date' in df_comments.columns:
+                  df_comments['date'] = pd.to_datetime(df_comments['date']).dt.strftime('%Y-%m-%d %H:%M:%S')
+              if 'scraped_at' in df_comments.columns:
+                  df_comments['scraped_at'] = pd.to_datetime(df_comments['scraped_at']).dt.strftime('%Y-%m-%d %H:%M:%S')
+  
+          return {
+              "videos": df_videos.to_dict(orient='records') if not df_videos.empty else [],
+              "comments": df_comments.to_dict(orient='records') if not df_comments.empty else [],
+              "credentials_found": os.path.exists("credentials.json")
+          }
+      except Exception as e:
+          print(f"API Data Error: {e}")
+          return {"videos": [], "comments": [], "error": str(e)}
+  
+  @app.post("/api/scrape")
+  async def run_scrape(request: ScrapeRequest):
+      try:
+          config = load_config()
+          since_dt = None
+          if request.since_date:
+              try:
+                  since_dt = datetime.fromisoformat(request.since_date)
+              except:
+                  pass
+  
+          results = []
+          loop = asyncio.get_event_loop()
+          
+          if request.scrape_type == "Hashtag":
+              results = await loop.run_in_executor(None, scrape_hashtag_sync, 
+                          request.search_input, request.video_count, since_dt, request.apify_token, request.comments_limit if request.scrape_comments else 0)
+          elif request.scrape_type == "Username":
+              results = await loop.run_in_executor(None, scrape_user_sync, 
+                          request.search_input, request.video_count, since_dt, request.apify_token, request.comments_limit if request.scrape_comments else 0)
+          else: # Keyword
+              results = await loop.run_in_executor(None, scrape_search_sync, 
+                          request.search_input, request.video_count, since_dt, request.apify_token, request.comments_limit if request.scrape_comments else 0)
+          
+          if results:
+              all_comments = []
+              for video in results:
+                  if 'scraped_comments' in video:
+                      all_comments.extend(video['scraped_comments'])
+                      del video['scraped_comments']
+              
+              # Save to local cache regardless of Sheets status
+              save_local_data({"videos": results, "comments": all_comments})
+              
+              # Try to save to Sheets if connected
+              manager = SheetsManager(sheet_url=config.get("sheet_url") if config.get("sheet_url") else None)
+              if manager.connect():
+                  manager.append_data(results)
+                  if all_comments:
+                      manager.append_comments(all_comments)
+              
+              return {
+                  "success": True, 
+                  "video_count": len(results), 
+                  "comment_count": len(all_comments)
+              }
+          else:
+              return {"success": False, "error": "No results found"}
+              
+      except Exception as e:
+          raise HTTPException(status_code=500, detail=str(e))
+  
+  if __name__ == "__main__":
+      import uvicorn
+      uvicorn.run(app, host="0.0.0.0", port=8001)
+  
+  </fragment>
+  
+  
+  <fragment description="frontend\package.json">
+  {
+    "name": "vite_react_shadcn_ts",
+    "private": true,
+    "version": "0.0.0",
+    "type": "module",
+    "scripts": {
+      "dev": "vite",
+      "build": "vite build",
+      "build:dev": "vite build --mode development",
+      "lint": "eslint .",
+      "preview": "vite preview",
+      "test": "vitest run",
+      "test:watch": "vitest"
+    },
+    "dependencies": {
+      "@hookform/resolvers": "^3.10.0",
+      "@radix-ui/react-accordion": "^1.2.11",
+      "@radix-ui/react-alert-dialog": "^1.1.14",
+      "@radix-ui/react-aspect-ratio": "^1.1.7",
+      "@radix-ui/react-avatar": "^1.1.10",
+      "@radix-ui/react-checkbox": "^1.3.2",
+      "@radix-ui/react-collapsible": "^1.1.11",
+      "@radix-ui/react-context-menu": "^2.2.15",
+      "@radix-ui/react-dialog": "^1.1.14",
+      "@radix-ui/react-dropdown-menu": "^2.1.15",
+      "@radix-ui/react-hover-card": "^1.1.14",
+      "@radix-ui/react-label": "^2.1.7",
+      "@radix-ui/react-menubar": "^1.1.15",
+      "@radix-ui/react-navigation-menu": "^1.2.13",
+      "@radix-ui/react-popover": "^1.1.14",
+      "@radix-ui/react-progress": "^1.1.7",
+      "@radix-ui/react-radio-group": "^1.3.7",
+      "@radix-ui/react-scroll-area": "^1.2.9",
+      "@radix-ui/react-select": "^2.2.5",
+      "@radix-ui/react-separator": "^1.1.7",
+      "@radix-ui/react-slider": "^1.3.5",
+      "@radix-ui/react-slot": "^1.2.3",
+      "@radix-ui/react-switch": "^1.2.5",
+      "@radix-ui/react-tabs": "^1.1.12",
+      "@radix-ui/react-toast": "^1.2.14",
+      "@radix-ui/react-toggle": "^1.1.9",
+      "@radix-ui/react-toggle-group": "^1.1.10",
+      "@radix-ui/react-tooltip": "^1.2.7",
+      "@tanstack/react-query": "^5.83.0",
+      "class-variance-authority": "^0.7.1",
+      "clsx": "^2.1.1",
+      "cmdk": "^1.1.1",
+      "date-fns": "^3.6.0",
+      "embla-carousel-react": "^8.6.0",
+      "input-otp": "^1.4.2",
+      "lucide-react": "^0.462.0",
+      "next-themes": "^0.3.0",
+      "react": "^18.3.1",
+      "react-day-picker": "^8.10.1",
+      "react-dom": "^18.3.1",
+      "react-hook-form": "^7.61.1",
+      "react-resizable-panels": "^2.1.9",
+      "react-router-dom": "^6.30.1",
+      "recharts": "^2.15.4",
+      "sonner": "^1.7.4",
+      "tailwind-merge": "^2.6.0",
+      "tailwindcss-animate": "^1.0.7",
+      "vaul": "^0.9.9",
+      "zod": "^3.25.76"
+    },
+    "devDependencies": {
+      "@eslint/js": "^9.32.0",
+      "@testing-library/jest-dom": "^6.6.0",
+      "@testing-library/react": "^16.0.0",
+      "@tailwindcss/typography": "^0.5.16",
+      "@types/node": "^22.16.5",
+      "@types/react": "^18.3.23",
+      "@types/react-dom": "^18.3.7",
+      "@vitejs/plugin-react-swc": "^3.11.0",
+      "autoprefixer": "^10.4.21",
+      "eslint": "^9.32.0",
+      "eslint-plugin-react-hooks": "^5.2.0",
+      "eslint-plugin-react-refresh": "^0.4.20",
+      "globals": "^15.15.0",
+      "jsdom": "^20.0.3",
+      "postcss": "^8.5.6",
+      "tailwindcss": "^3.4.17",
+      "typescript": "^5.8.3",
+      "typescript-eslint": "^8.38.0",
+      "vite": "^5.4.19",
+      "vitest": "^3.2.4"
+    }
+  }
+  </fragment>
+  
+  
+  <fragment description="frontend\vite.config.ts">
+  import { defineConfig } from "vite";
+  import react from "@vitejs/plugin-react-swc";
+  import path from "path";
+  
+  // https://vitejs.dev/config/
+  export default defineConfig(({ mode }) => ({
+    server: {
+      host: "::",
+      port: 8081,
+      hmr: {
+        overlay: false,
+      },
+    },
+    plugins: [react()],
+    resolve: {
+      alias: {
+        "@": path.resolve(__dirname, "./src"),
+      },
+    },
+  }));
+  
+  </fragment>
+  
+  
+  <fragment description="Summary of frontend\vercel.json">
+  No summary found for: frontend\vercel.json
+  </fragment>
+  
+  
+  <fragment description="Summary of requirements.txt">
+  No summary found for: requirements.txt
+  </fragment>
+  
+  
+  <fragment description="Summary of frontend\index.html">
+  No summary found for: frontend\index.html
+  </fragment>
+  
+  
+  <fragment description="frontend\vercel.json">
+  {
+      "rewrites": [
+          {
+              "source": "/(.*)",
+              "destination": "/index.html"
+          }
+      ]
+  }
+  </fragment>
+  
+  
+  <fragment description="requirements.txt">
+  streamlit==1.31.0
+  plotly==5.18.0
+  pandas==2.1.4
+  TikTokApi==6.2.0
+  playwright==1.41.0
+  gspread==6.0.0
+  oauth2client==4.1.3
+  textblob==0.17.1
+  vaderSentiment==3.3.2
+  wordcloud==1.9.3
+  matplotlib==3.8.2
+  python-dotenv==1.0.0
+  Pillow==10.2.0
+  apify-client==1.6.4
+  
+  </fragment>
+  
+  
+  <fragment description="frontend\index.html">
+  <!doctype html>
+  <html lang="en">
+  
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/logo-icon.svg" />
+    <title>Nendo TikTok Bot | Intelligence Platform</title>
+    <meta name="description" content="Nendo TikTok Social Listening & Intelligence Platform" />
+    <meta name="author" content="Nendo" />
+  
+    <meta property="og:title" content="Nendo TikTok Bot" />
+    <meta property="og:description" content="Nendo TikTok Social Listening & Intelligence Platform" />
+    <meta property="og:type" content="website" />
+  
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@Nendo" />
+  </head>
+  
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+  
+  </html>
+  </fragment>
+  
+  
+  <fragment description="Summary of frontend\src\hooks\useTikTokData.ts">
+  package frontend.src.hooks;
+  
+  import { useState, useCallback, useRef, useMemo } from 'react';
+  import { TikTokVideo, Creator, SentimentData, TimeSeriesData, HashtagData } from '@/lib/mockData';
+  import { toast } from 'sonner';
+  
+  export const useTikTokData = () => { ... }
+  
+  export const useTikTokData = () => {
+      const [videos, setVideos] = useState<TikTokVideo[]>([]);
+      const [creators, setCreators] = useState<Creator[]>([]);
+      const [sentiment, setSentiment] = useState<SentimentData>({ positive: 0, neutral: 0, negative: 0 });
+      const [timeline, setTimeline] = useState<TimeSeriesData[]>([]);
+      const [hashtags, setHashtags] = useState<HashtagData[]>([]);
+      const [loading, setLoading] = useState(false);
+      const [scrapingProgress, setScrapingProgress] = useState(0);
+  
+      const [apiConnected, setApiConnected] = useState(false);
+      const [sheetsConnected, setSheetsConnected] = useState(false);
+      const [credentialsFound, setCredentialsFound] = useState(false);
+      const [sheetUrl, setSheetUrl] = useState('');
+      const [apifyToken, setApifyToken] = useState('');
+      const [groups, setGroups] = useState<{ name: string, keywords: string[], exclude_keywords?: string[], exact_match?: boolean }[]>([]);
+      const [activeGroupName, setActiveGroupName] = useState<string>('All Data');
+  
+      const fetchSettings = useCallback(async () => {
+          try {
+              // Fetch health/credentials too
+              const healthRes = await fetch('http://127.0.0.1:8001/api/health');
+              if (healthRes.ok) {
+                  const healthData = await healthRes.json();
+                  setCredentialsFound(healthData.credentials_found);
+              }
+  
+              const response = await fetch('http://127.0.0.1:8001/api/settings');
+              if (response.ok) {
+                  const data = await response.json();
+                  setSheetUrl(data.sheet_url || '');
+                  setApifyToken(data.apify_token || '');
+                  setGroups(data.groups || []);
+              }
+          } catch (error) {
+              console.error("Failed to fetch settings", error);
+          }
+      }, []);
+  
+      const updateSettings = async (url: string, token?: string) => {
+          try {
+              console.log("Saving settings to 127.0.0.1:8001...", { url, token });
+              const response = await fetch('http://127.0.0.1:8001/api/settings', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ sheet_url: url, apify_token: token || apifyToken })
+              });
+              if (response.ok) {
+                  const data = await response.json();
+                  console.log("Settings saved:", data);
+                  setSheetUrl(url);
+                  if (token) setApifyToken(token);
+                  toast.success("Settings updated successfully");
+                  await fetchData();
+              } else {
+                  const errorData = await response.json().catch(() => ({ detail: "Unknown server error" }));
+                  toast.error(`Failed to save: ${errorData.detail || "Server error"}`);
+              }
+          } catch (error) {
+              console.error("Save error:", error);
+              toast.error("Network error: Could not reach backend");
+          }
+      };
+  
+      const addGroup = async (name: string, keywords: string[], exclude_keywords: string[] = [], exact_match: boolean = false) => {
+          try {
+              const response = await fetch('http://127.0.0.1:8001/api/groups', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ name, keywords, exclude_keywords, exact_match })
+              });
+              if (response.ok) {
+                  const data = await response.json();
+                  setGroups(data.groups);
+                  toast.success(`Group "${name}" created!`);
+              }
+          } catch (error) {
+              toast.error("Failed to create group");
+          }
+      };
+  
+      const deleteGroup = async (name: string) => {
+          try {
+              const response = await fetch(`http://127.0.0.1:8001/api/groups/${name}`, {
+                  method: 'DELETE'
+              });
+              if (response.ok) {
+                  const data = await response.json();
+                  setGroups(data.groups);
+                  if (activeGroupName === name) setActiveGroupName('All Data');
+                  toast.success(`Group "${name}" removed`);
+              }
+          } catch (error) {
+              toast.error("Failed to delete group");
+          }
+      };
+  
+      // Stable key for groups dependency
+      const groupsKey = useMemo(() => JSON.stringify(groups), [groups]);
+  
+      const fetchData = useCallback(async () => {
+          setLoading(true);
+          try {
+              const response = await fetch('http://127.0.0.1:8001/api/data');
+              if (!response.ok) throw new Error("API Offline");
+  
+              setApiConnected(true);
+              const data = await response.json();
+  
+              if (data.error) {
+                  // Only show connection error if a URL is actually configured
+                  if (sheetUrl) {
+                      toast.error(data.error);
+                  }
+                  setSheetsConnected(false);
+                  setVideos([]);
+                  return;
+              }
+  
+              setSheetsConnected(true);
+  
+              // Map API data to UI model
+              let rawVideos: TikTokVideo[] = data.videos.map((v: any) => ({
+                  id: v.video_id,
+                  caption: v.caption || '',
+                  author: '@' + (v.author || 'unknown'),
+                  authorAvatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${v.author}`,
+                  views: parseInt(v.views) || 0,
+                  likes: parseInt(v.likes) || 0,
+                  comments: parseInt(v.comments) || 0,
+                  shares: parseInt(v.shares) || 0,
+                  saves: parseInt(v.saves) || 0,
+                  sentiment: v.sentiment || 'neutral',
+                  sentimentScore: v.sentiment_score || 0.5,
+                  createdAt: v.publish_date,
+                  hashtags: v.hashtags ? v.hashtags.split(',').map((h: string) => h.trim().toLowerCase()) : [],
+                  thumbnailUrl: v.thumbnail_url || `https://images.unsplash.com/photo-1518609878373-06d740f60d8b?w=300&h=400&fit=crop`
+              }));
+  
+              // APPLY ADVANCED GROUP FILTERING
+              let filteredVideos = rawVideos;
+              if (activeGroupName !== 'All Data') {
+                  const activeGroup = groups.find(g => g.name === activeGroupName);
+                  if (activeGroup) {
+                      const groupKeywords = (activeGroup.keywords || []).map(k => k.toLowerCase().trim());
+                      const excludeKeywords = (activeGroup.exclude_keywords || []).map(k => k.toLowerCase().trim());
+                      const exactMatch = activeGroup.exact_match || false;
+  
+                      filteredVideos = rawVideos.filter(v => {
+                          const text = (v.caption + ' ' + (v.hashtags || []).join(' ')).toLowerCase();
+  
+                          // Check Exclusion (Noise reduction)
+                          const isExcluded = excludeKeywords.some(k => text.includes(k));
+                          if (isExcluded) return false;
+  
+                          // Check Inclusion
+                          if (exactMatch) {
+                              // Match whole words only
+                              return groupKeywords.some(k => {
+                                  const escaped = k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                                  const regex = new RegExp(`\\b${escaped}\\b`, 'i');
+                                  return regex.test(text);
+                              });
+                          } else {
+                              // Broad match
+                              return groupKeywords.some(k => text.includes(k));
+                          }
+                      });
+                  }
+              }
+  
+              setVideos(filteredVideos);
+  
+              // Sentiment aggregation (using filtered data)
+              const counts = filteredVideos.reduce((acc: any, curr: any) => {
+                  const s = curr.sentiment || 'neutral';
+                  acc[s] = (acc[s] || 0) + 1;
+                  return acc;
+              }, { positive: 0, neutral: 0, negative: 0 });
+  
+              const total = filteredVideos.length || 1;
+              setSentiment({
+                  positive: Math.round((counts.positive / total) * 100),
+                  neutral: Math.round((counts.neutral / total) * 100),
+                  negative: Math.round((counts.negative / total) * 100)
+              });
+  
+              // Timeline aggregation (using filtered data)
+              const timeData: any = {};
+              filteredVideos.forEach((v: any) => {
+                  if (!v.createdAt) return;
+                  const date = v.createdAt.split(' ')[0];
+                  if (!timeData[date]) {
+                      timeData[date] = { date, views: 0, likes: 0, comments: 0, shares: 0 };
+                  }
+                  timeData[date].views += v.views;
+                  timeData[date].likes += v.likes;
+                  timeData[date].comments += v.comments;
+                  timeData[date].shares += v.shares;
+              });
+              setTimeline(Object.values(timeData).sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime()) as TimeSeriesData[]);
+  
+          } catch (error) {
+              console.error(error);
+              setApiConnected(false);
+              setSheetsConnected(false);
+              // Suppress toast for initial offline state
+              if (activeGroupName !== 'All Data' || groups.length > 0) {
+                  toast.error("Failed to connect to backend");
+              }
+          } finally {
+              setLoading(false);
+          }
+      }, [activeGroupName, groupsKey, sheetUrl]);
+  
+      const runScrape = async (
+          type: string,
+          input: string,
+          limit: number,
+          token: string,
+          sinceDate?: string,
+          scrapeComments: boolean = false,
+          commentsLimit: number = 0
+      ) => {
+          setLoading(true);
+          setScrapingProgress(10);
+  
+          try {
+              const progressInterval = setInterval(() => {
+                  setScrapingProgress(prev => (prev < 95 ? prev + (95 - prev) * 0.1 : prev));
+              }, 1500);
+  
+              const response = await fetch('http://127.0.0.1:8001/api/scrape', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                      scrape_type: type,
+                      search_input: input,
+                      video_count: limit,
+                      since_date: sinceDate,
+                      apify_token: token,
+                      scrape_comments: scrapeComments,
+                      comments_limit: commentsLimit
+                  })
+              });
+  
+              clearInterval(progressInterval);
+              setScrapingProgress(100);
+  
+              const data = await response.json();
+              if (data.success) {
+                  toast.success(`Scraped ${data.video_count} videos and ${data.comment_count} comments!`);
+                  await fetchData();
+              } else {
+                  toast.error(data.error || "Scraping failed");
+              }
+          } catch (error) {
+              toast.error("Network error during scraping");
+          } finally {
+              setLoading(false);
+              setTimeout(() => setScrapingProgress(0), 1000);
+          }
+      };
+  
+      const exportData = (format: 'csv' | 'excel') => {
+          if (videos.length === 0) {
+              toast.error("No data to export");
+              return;
+          }
+  
+          const headers = ['ID', 'Author', 'Caption', 'Views', 'Likes', 'Comments', 'Shares', 'Sentiment', 'Date', 'Hashtags'];
+          const rows = videos.map(v => [
+              v.id,
+              v.author,
+              `"${v.caption.replace(/"/g, '""')}"`,
+              v.views,
+              v.likes,
+              v.comments,
+              v.shares,
+              v.sentiment,
+              v.createdAt,
+              v.hashtags.join(', ')
+          ]);
+  
+          const content = [headers, ...rows].map(e => e.join(",")).join("\n");
+          const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.setAttribute("href", url);
+          link.setAttribute("download", `tiktok_export_${activeGroupName.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.${format === 'csv' ? 'csv' : 'xlsx'}`);
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          toast.success(`Data exported as ${format.toUpperCase()}`);
+      };
+  
+      return {
+          videos, creators, sentiment, timeline, hashtags,
+          loading, scrapingProgress, apiConnected, sheetsConnected,
+          sheetUrl, apifyToken, groups, activeGroupName, setActiveGroupName,
+          fetchSettings, updateSettings, addGroup, deleteGroup,
+          fetchData, runScrape, exportData, credentialsFound
+      };
+  }
+  </fragment>
+  
+  
+  <fragment description="Summary of scraper.py">
+  package scraper;
+  
+  class TikTokScraper:
+    def __init__(self, api_token=None): ...
+    async def initialize(self): ...
+    def extract_hashtags(self, caption): ...
+    def extract_mentions(self, caption): ...
+    def _map_result(self, item, extract_comments=False): ...
+    async def _run_actor(self, run_input, limit=None, since_date=None, comments_per_video=0): ...
+    async def scrape_hashtag(self, hashtags, count=None, since_date=None, comments_per_video=0): ...
+    async def scrape_user(self, usernames, count=None, since_date=None, comments_per_video=0): ...
+    async def scrape_search(self, queries, count=None, since_date=None, comments_per_video=0): ...
+    async def close(self):
+  
+  def scrape_hashtag_sync(hashtags, count=None, since_date=None, api_token=None, comments_per_video=0): ...
+  
+  def scrape_user_sync(usernames, count=None, since_date=None, api_token=None, comments_per_video=0): ...
+  
+  def scrape_search_sync(queries, count=None, since_date=None, api_token=None, comments_per_video=0): ...
+  </fragment>
+  
+  
+  <fragment description="Discarded Context">
+  {
+    "frontend\\src\\main.tsx" : "Key facts: Mounts App to #root.. Reason: Standard entry point, not relevant for routing config.",
+    "frontend\\src\\pages\\NotFound.tsx" : "Key facts: Logs 404 errors to console.. Reason: Component implementation details irrelevant for routing config.",
+    "frontend\\README.md" : "Key facts: Deployment instructions: Root Directory 'frontend', Output 'dist', Build 'npm run build'.. Reason: General info, redundant with specific file contents.",
+    "frontend\\src\\App.tsx" : "Key facts: React Router uses BrowserRouter. Routes: / -> Index, * -> NotFound.. Reason: Client-side routing confirmed; implementation details not needed for deployment config.",
+    "README.md" : "Key facts: TikTok Social Listening & Analytics Dashboard. Python backend + React frontend.. Reason: General project info, not needed for specific Vercel config debugging.",
+    "Summary of frontend\\src\\pages\\Index.tsx" : "Key facts: No relevant facts. Reason: Display page not relevant to deployment config.",
+    "Summary of frontend\\src\\components\\dashboard\\VideoTable.tsx" : "Key facts: No relevant facts. Reason: Display component not relevant to deployment config."
+  }
+  </fragment>
+  </workspace><project_guide>
+  ### AGENTS.md at .
+  
+  # Nendo TikTok Bot Coding Style Guide
+  
+  ## 1. Frontend (React & TypeScript)
+  
+  ### Component Patterns
+  - **Functional Components**: Use `export const ComponentName = (...) => { ... }` rather than function declarations.
+  - **Conditional Styling**: Use the `cn()` utility (based on `clsx` and `tailwind-merge`) for all dynamic class merging.
+  - **Prop Interfaces**: Define `interface ComponentProps` immediately above the component. Use `React.ElementType` for props that accept Lucide icons.
+  - **Icon Rendering**: Render dynamic icons using the `<item.icon />` syntax by assigning the icon to a lowercase variable or property.
+  
+  ### State & Navigation
+  - **View Management**: Use a `currentView` string and `onNavigate` callback pattern for simple SPA navigation within a dashboard layout.
+  - **Controlled Collapsibles**: Prefer manual state management (`collapsed`, `setCollapsed`) for sidebars to ensure precise control over layout transitions.
+  
+  ### Project Configuration
+  - **Path Aliasing**: Use the `@/` prefix to reference the `src` directory, configured via Vite and TypeScript.
+  - **Vite Plugins**: Use `@vitejs/plugin-react-swc` for faster builds and HMR.
+  
+  ## 2. Python (Streamlit & Scraping)
+  
+  ### Module Architecture
+  - **Sync/Async Hybrid**: Implement core logic (like scrapers) using `async` methods, but provide `_sync` wrapper functions using `asyncio.run()` for compatibility with Streamlit’s synchronous execution model.
+  - **Resource Management**: Use `@st.cache_resource` for singleton-like objects such as database managers (`SheetsManager`) or ML analyzers (`TikTokAnalyzer`).
+  
+  ### Data Handling
+  - **Pandas Integration**: Return `pd.DataFrame` from all analysis and data retrieval methods.
+  - **Defensive Mapping**: When parsing external API results (e.g., Apify), use a private `_map_result` method with extensive `.get()` calls and `try/except` blocks to handle inconsistent JSON schemas.
+  - **Data Deduplication**: Maintain a `set` of unique identifiers (e.g., `video_id`) when appending data to external storage (Google Sheets) to prevent duplicates.
+  
+  ### UI & Visualization
+  - **Session State**: Explicitly initialize all state variables (e.g., `data_loaded`, `df`) at the start of the `app.py`.
+  - **Plotly Configuration**: Use `rgba(0,0,0,0)` for `plot_bgcolor` and `paper_bgcolor` to ensure charts blend seamlessly with the Streamlit theme.
+  - **Progressive Columns**: Use `st.column_config` (e.g., `ProgressColumn`, `LinkColumn`) to turn standard DataFrames into interactive dashboards.
+  
+  ## 3. General Conventions
+  
+  ### External Integrations
+  - **Google Sheets**: Treat the first row of a worksheet as the schema definition. Automatically initialize headers if `row_values(1)` is empty.
+  - **Environment Variables**: Use `os.getenv()` as a fallback for API tokens, but prioritize explicit parameter passing for flexibility.
+  
+  ### Error Handling
+  - **Visual Feedback**: Use `st.sidebar.error` or `st.sidebar.warning` instead of generic print statements for user-facing errors in the dashboard.
+  - **Silent Failures**: In mapping functions or loops, use `continue` within `try/except` blocks to ensure a single malformed data point doesn't crash the entire ingestion pipeline.
+  </project_guide>
+  
+  
+  [Image]
+</message>
+
+<message type=ai>
+  Thank you for providing these Workspace contents.
+</message>
+
+<message type=user>
+  <available_files>
+  <file path='frontend\src\components\dashboard\Header.tsx'>
+  - frontend.src.components.dashboard.Header.tsx
+  - frontend.src.components.dashboard.HeaderProps
+    - apiConnected
+    - sheetsConnected
+  - frontend.src.components.dashboard.Header
+  - frontend.src.components.dashboard.Header.tsx.Header
+  </file>
+  
+  <file path='frontend\src\components\ui\sonner.tsx'>
+  - frontend.src.components.ui.sonner.tsx
+  - frontend.src.components.ui.sonner.tsx.ToasterProps
+  - frontend.src.components.ui.Toaster
+  - frontend.src.components.ui.sonner.tsx.Toaster
+  </file>
+  
+  <file path='frontend\src\components\ui\drawer.tsx'>
+  - frontend.src.components.ui.drawer.tsx
+  - frontend.src.components.ui.drawer.tsx.Drawer
+  - frontend.src.components.ui.Drawer
+  - frontend.src.components.ui.drawer.tsx.DrawerTrigger
+  - frontend.src.components.ui.drawer.tsx.DrawerPortal
+  - frontend.src.components.ui.drawer.tsx.DrawerClose
+  - frontend.src.components.ui.drawer.tsx.DrawerOverlay
+  - frontend.src.components.ui.drawer.tsx.DrawerContent
+  - frontend.src.components.ui.drawer.tsx.DrawerHeader
+  - frontend.src.components.ui.DrawerHeader
+  - frontend.src.components.ui.DrawerFooter
+  - frontend.src.components.ui.drawer.tsx.DrawerFooter
+  - frontend.src.components.ui.drawer.tsx.DrawerTitle
+  - frontend.src.components.ui.drawer.tsx.DrawerDescription
+  </file>
+  
+  <file path='frontend\src\components\ui\toggle-group.tsx'>
+  - frontend.src.components.ui.toggle-group.tsx
+  - frontend.src.components.ui.toggle-group.tsx.ToggleGroupContext
+  - frontend.src.components.ui.toggle-group.tsx.ToggleGroup
+  - frontend.src.components.ui.toggle-group.tsx.ToggleGroupItem
+  </file>
+  
+  <file path='frontend\src\components\ui\alert-dialog.tsx'>
+  - frontend.src.components.ui.alert-dialog.tsx
+  - frontend.src.components.ui.alert-dialog.tsx.AlertDialog
+  - frontend.src.components.ui.alert-dialog.tsx.AlertDialogTrigger
+  - frontend.src.components.ui.alert-dialog.tsx.AlertDialogPortal
+  - frontend.src.components.ui.alert-dialog.tsx.AlertDialogOverlay
+  - frontend.src.components.ui.alert-dialog.tsx.AlertDialogContent
+  - frontend.src.components.ui.alert-dialog.tsx.AlertDialogHeader
+  - frontend.src.components.ui.AlertDialogHeader
+  - frontend.src.components.ui.alert-dialog.tsx.AlertDialogFooter
+  - frontend.src.components.ui.AlertDialogFooter
+  - frontend.src.components.ui.alert-dialog.tsx.AlertDialogTitle
+  - frontend.src.components.ui.alert-dialog.tsx.AlertDialogDescription
+  - frontend.src.components.ui.alert-dialog.tsx.AlertDialogAction
+  - frontend.src.components.ui.alert-dialog.tsx.AlertDialogCancel
+  </file>
+  
+  <file path='frontend\src\components\dashboard\MetricCard.tsx'>
+  - frontend.src.components.dashboard.MetricCard.tsx
+  - frontend.src.components.dashboard.MetricCardProps
+    - title
+    - value
+    - change
+    - icon
+    - iconColor
+  - frontend.src.components.dashboard.MetricCard.tsx.iconColorClasses
+  - frontend.src.components.dashboard.MetricCard
+  - frontend.src.components.dashboard.MetricCard.tsx.MetricCard
+  </file>
+  
+  <file path='frontend\src\components\ui\toggle.tsx'>
+  - frontend.src.components.ui.toggle.tsx
+  - frontend.src.components.ui.toggle.tsx.toggleVariants
+  - frontend.src.components.ui.toggle.tsx.Toggle
+  </file>
+  
+  <file path='frontend\src\components\ui\input-otp.tsx'>
+  - frontend.src.components.ui.input-otp.tsx
+  - frontend.src.components.ui.input-otp.tsx.InputOTP
+  - frontend.src.components.ui.input-otp.tsx.InputOTPGroup
+  - frontend.src.components.ui.input-otp.tsx.InputOTPSlot
+  - frontend.src.components.ui.input-otp.tsx.InputOTPSeparator
+  </file>
+  
+  <file path='frontend\src\components\ui\input.tsx'>
+  - frontend.src.components.ui.input.tsx
+  - frontend.src.components.ui.input.tsx.Input
+  </file>
+  
+  <file path='frontend\src\components\ui\select.tsx'>
+  - frontend.src.components.ui.select.tsx
+  - frontend.src.components.ui.select.tsx.Select
+  - frontend.src.components.ui.select.tsx.SelectGroup
+  - frontend.src.components.ui.select.tsx.SelectValue
+  - frontend.src.components.ui.select.tsx.SelectTrigger
+  - frontend.src.components.ui.select.tsx.SelectScrollUpButton
+  - frontend.src.components.ui.select.tsx.SelectScrollDownButton
+  - frontend.src.components.ui.select.tsx.SelectContent
+  - frontend.src.components.ui.select.tsx.SelectLabel
+  - frontend.src.components.ui.select.tsx.SelectItem
+  - frontend.src.components.ui.select.tsx.SelectSeparator
+  </file>
+  
+  <file path='frontend\src\components\ui\radio-group.tsx'>
+  - frontend.src.components.ui.radio-group.tsx
+  - frontend.src.components.ui.radio-group.tsx.RadioGroup
+  - frontend.src.components.ui.radio-group.tsx.RadioGroupItem
+  </file>
+  
+  <file path='frontend\src\components\ui\textarea.tsx'>
+  - frontend.src.components.ui.textarea.tsx
+  - frontend.src.components.ui.TextareaProps
+  - frontend.src.components.ui.textarea.tsx.Textarea
+  </file>
+  
+  <file path='frontend\src\components\ui\label.tsx'>
+  - frontend.src.components.ui.label.tsx
+  - frontend.src.components.ui.label.tsx.labelVariants
+  - frontend.src.components.ui.label.tsx.Label
+  </file>
+  
+  <file path='frontend\src\components\ui\pagination.tsx'>
+  - frontend.src.components.ui.pagination.tsx
+  - frontend.src.components.ui.pagination.tsx.Pagination
+  - frontend.src.components.ui.Pagination
+  - frontend.src.components.ui.pagination.tsx.PaginationContent
+  - frontend.src.components.ui.pagination.tsx.PaginationItem
+  - frontend.src.components.ui.pagination.tsx.PaginationLinkProps
+  - frontend.src.components.ui.pagination.tsx.PaginationLink
+  - frontend.src.components.ui.PaginationLink
+  - frontend.src.components.ui.PaginationPrevious
+  - frontend.src.components.ui.pagination.tsx.PaginationPrevious
+  - frontend.src.components.ui.PaginationNext
+  - frontend.src.components.ui.pagination.tsx.PaginationNext
+  - frontend.src.components.ui.PaginationEllipsis
+  - frontend.src.components.ui.pagination.tsx.PaginationEllipsis
+  </file>
+  
+  <file path='frontend\src\App.tsx'>
+  - frontend.src.App.tsx
+  - frontend.src.App.tsx.queryClient
+  - frontend.src.App
+  - frontend.src.App.tsx.App
+  </file>
+  
+  <file path='frontend\src\components\dashboard\CreatorLeaderboard.tsx'>
+  - frontend.src.components.dashboard.CreatorLeaderboard.tsx
+  - frontend.src.components.dashboard.CreatorLeaderboard.tsx.rankColors
+  - frontend.src.components.dashboard.CreatorLeaderboard
+  - frontend.src.components.dashboard.CreatorLeaderboard.tsx.CreatorLeaderboard
+  </file>
+  
+  <file path='frontend\src\components\ui\separator.tsx'>
+  - frontend.src.components.ui.separator.tsx
+  - frontend.src.components.ui.separator.tsx.Separator
+  </file>
+  
+  <file path='frontend\src\components\ui\carousel.tsx'>
+  - frontend.src.components.ui.carousel.tsx
+  - frontend.src.components.ui.carousel.tsx.CarouselApi
+  - frontend.src.components.ui.carousel.tsx.UseCarouselParameters
+  - frontend.src.components.ui.carousel.tsx.CarouselOptions
+  - frontend.src.components.ui.carousel.tsx.CarouselPlugin
+  - frontend.src.components.ui.carousel.tsx.CarouselProps
+  - frontend.src.components.ui.carousel.tsx.CarouselContextProps
+  - frontend.src.components.ui.carousel.tsx.CarouselContext
+  - frontend.src.components.ui.useCarousel
+  - frontend.src.components.ui.carousel.tsx.Carousel
+  - frontend.src.components.ui.carousel.tsx.CarouselContent
+  - frontend.src.components.ui.carousel.tsx.CarouselItem
+  - frontend.src.components.ui.carousel.tsx.CarouselPrevious
+  - frontend.src.components.ui.carousel.tsx.CarouselNext
+  </file>
+  
+  <file path='frontend\src\components\ui\badge.tsx'>
+  - frontend.src.components.ui.badge.tsx
+  - frontend.src.components.ui.badge.tsx.badgeVariants
+  - frontend.src.components.ui.BadgeProps
+  - frontend.src.components.ui.Badge
+  </file>
+  
+  <file path='frontend\src\components\ui\context-menu.tsx'>
+  - frontend.src.components.ui.context-menu.tsx
+  - frontend.src.components.ui.context-menu.tsx.ContextMenu
+  - frontend.src.components.ui.context-menu.tsx.ContextMenuTrigger
+  - frontend.src.components.ui.context-menu.tsx.ContextMenuGroup
+  - frontend.src.components.ui.context-menu.tsx.ContextMenuPortal
+  - frontend.src.components.ui.context-menu.tsx.ContextMenuSub
+  - frontend.src.components.ui.context-menu.tsx.ContextMenuRadioGroup
+  - frontend.src.components.ui.context-menu.tsx.ContextMenuSubTrigger
+  - frontend.src.components.ui.context-menu.tsx.ContextMenuSubContent
+  - frontend.src.components.ui.context-menu.tsx.ContextMenuContent
+  - frontend.src.components.ui.context-menu.tsx.ContextMenuItem
+  - frontend.src.components.ui.context-menu.tsx.ContextMenuCheckboxItem
+  - frontend.src.components.ui.context-menu.tsx.ContextMenuRadioItem
+  - frontend.src.components.ui.context-menu.tsx.ContextMenuLabel
+  - frontend.src.components.ui.context-menu.tsx.ContextMenuSeparator
+  - frontend.src.components.ui.context-menu.tsx.ContextMenuShortcut
+  - frontend.src.components.ui.ContextMenuShortcut
+  </file>
+  
+  <file path='frontend\src\components\ui\collapsible.tsx'>
+  - frontend.src.components.ui.collapsible.tsx
+  - frontend.src.components.ui.collapsible.tsx.Collapsible
+  - frontend.src.components.ui.collapsible.tsx.CollapsibleTrigger
+  - frontend.src.components.ui.collapsible.tsx.CollapsibleContent
+  </file>
+  
+  <file path='frontend\src\components\dashboard\VideoCard.tsx'>
+  - frontend.src.components.dashboard.VideoCard.tsx
+  - frontend.src.components.dashboard.VideoCardProps
+    - video
+  - frontend.src.components.dashboard.VideoCard.tsx.sentimentColors
+  - frontend.src.components.dashboard.VideoCard.tsx.VideoCard
+  - frontend.src.components.dashboard.VideoCard
+  </file>
+  
+  <file path='frontend\src\test\setup.ts'>
+  - frontend.src.test.setup.ts
+  </file>
+  
+  <file path='frontend\src\components\ui\command.tsx'>
+  - frontend.src.components.ui.command.tsx
+  - frontend.src.components.ui.command.tsx.Command
+  - frontend.src.components.ui.CommandDialogProps
+  - frontend.src.components.ui.CommandDialog
+  - frontend.src.components.ui.command.tsx.CommandDialog
+  - frontend.src.components.ui.command.tsx.CommandInput
+  - frontend.src.components.ui.command.tsx.CommandList
+  - frontend.src.components.ui.command.tsx.CommandEmpty
+  - frontend.src.components.ui.command.tsx.CommandGroup
+  - frontend.src.components.ui.command.tsx.CommandSeparator
+  - frontend.src.components.ui.command.tsx.CommandItem
+  - frontend.src.components.ui.CommandShortcut
+  - frontend.src.components.ui.command.tsx.CommandShortcut
+  </file>
+  
+  <file path='frontend\src\test\mockData.test.ts'>
+  - frontend.src.test.mockData.test.ts
+  </file>
+  
+  <file path='frontend\src\pages\NotFound.tsx'>
+  - frontend.src.pages.NotFound.tsx
+  - frontend.src.pages.NotFound
+  - frontend.src.pages.NotFound.tsx.NotFound
+  </file>
+  
+  <file path='frontend\src\components\ui\chart.tsx'>
+  - frontend.src.components.ui.chart.tsx
+  - frontend.src.components.ui.chart.tsx.THEMES
+  - frontend.src.components.ui.chart.tsx.ChartConfig
+  - frontend.src.components.ui.chart.tsx.ChartContextProps
+  - frontend.src.components.ui.chart.tsx.ChartContext
+  - frontend.src.components.ui.useChart
+  - frontend.src.components.ui.chart.tsx.ChartContainer
+  - frontend.src.components.ui.chart.tsx.ChartStyle
+  - frontend.src.components.ui.ChartStyle
+  - frontend.src.components.ui.chart.tsx.ChartTooltip
+  - frontend.src.components.ui.chart.tsx.ChartTooltipContent
+  - frontend.src.components.ui.chart.tsx.ChartLegend
+  - frontend.src.components.ui.chart.tsx.ChartLegendContent
+  - frontend.src.components.ui.getPayloadConfigFromPayload
+  </file>
+  
+  <file path='frontend\src\components\ui\toaster.tsx'>
+  - frontend.src.components.ui.toaster.tsx
+  - frontend.src.components.ui.Toaster
+  </file>
+  
+  <file path='frontend\src\components\NavLink.tsx'>
+  - frontend.src.components.NavLink.tsx
+  - frontend.src.components.NavLinkCompatProps
+    - className
+    - activeClassName
+    - pendingClassName
+  - frontend.src.components.NavLink.tsx.NavLink
+  </file>
+  
+  <file path='frontend\src\components\ui\switch.tsx'>
+  - frontend.src.components.ui.switch.tsx
+  - frontend.src.components.ui.switch.tsx.Switch
+  </file>
+  
+  <file path='frontend\src\components\dashboard\Sidebar.tsx'>
+  - frontend.src.components.dashboard.Sidebar.tsx
+  - frontend.src.components.dashboard.NavItem
+    - icon
+    - label
+    - active
+  - frontend.src.components.dashboard.Sidebar.tsx.navItems
+  - frontend.src.components.dashboard.SidebarProps
+    - currentView
+    - onNavigate
+  - frontend.src.components.dashboard.Sidebar.tsx.Sidebar
+  - frontend.src.components.dashboard.Sidebar
+  </file>
+  
+  <file path='frontend\src\components\ui\table.tsx'>
+  - frontend.src.components.ui.table.tsx
+  - frontend.src.components.ui.table.tsx.Table
+  - frontend.src.components.ui.table.tsx.TableHeader
+  - frontend.src.components.ui.table.tsx.TableBody
+  - frontend.src.components.ui.table.tsx.TableFooter
+  - frontend.src.components.ui.table.tsx.TableRow
+  - frontend.src.components.ui.table.tsx.TableHead
+  - frontend.src.components.ui.table.tsx.TableCell
+  - frontend.src.components.ui.table.tsx.TableCaption
+  </file>
+  
+  <file path='frontend\src\hooks\use-mobile.tsx'>
+  - frontend.src.hooks.use-mobile.tsx
+  - frontend.src.hooks.use-mobile.tsx.MOBILE_BREAKPOINT
+  - frontend.src.hooks.useIsMobile
+  </file>
+  
+  <file path='frontend\src\components\ui\scroll-area.tsx'>
+  - frontend.src.components.ui.scroll-area.tsx
+  - frontend.src.components.ui.scroll-area.tsx.ScrollArea
+  - frontend.src.components.ui.scroll-area.tsx.ScrollBar
+  </file>
+  
+  <file path='sheets.py'>
+  - sheets.SheetsManager
+    - __init__
+    - connect
+    - get_existing_video_ids
+    - append_comments
+    - append_data
+    - get_all_data
+    - get_all_comments
+    - get_sheet_url
+  </file>
+  
+  <file path='frontend\src\components\dashboard\TrendingHashtags.tsx'>
+  - frontend.src.components.dashboard.TrendingHashtags.tsx
+  - frontend.src.components.dashboard.TrendingHashtags.tsx.trendIcons
+  - frontend.src.components.dashboard.TrendingHashtags.tsx.trendColors
+  - frontend.src.components.dashboard.TrendingHashtags
+  - frontend.src.components.dashboard.TrendingHashtags.tsx.TrendingHashtags
+  </file>
+  
+  <file path='frontend\src\components\ui\button.tsx'>
+  - frontend.src.components.ui.button.tsx
+  - frontend.src.components.ui.button.tsx.buttonVariants
+  - frontend.src.components.ui.ButtonProps
+    - asChild
+  - frontend.src.components.ui.button.tsx.Button
+  </file>
+  
+  <file path='analysis.py'>
+  - analysis.TikTokAnalyzer
+    - __init__
+    - calculate_engagement_rate
+    - analyze_sentiment_textblob
+    - analyze_sentiment_vader
+    - add_sentiment_analysis
+    - extract_word_frequency
+    - aggregate_by_time
+    - get_top_posts
+    - get_sentiment_distribution
+  </file>
+  
+  <file path='frontend\src\components\ui\slider.tsx'>
+  - frontend.src.components.ui.slider.tsx
+  - frontend.src.components.ui.slider.tsx.Slider
+  </file>
+  
+  <file path='frontend\src\test\example.test.ts'>
+  - frontend.src.test.example.test.ts
+  </file>
+  
+  <file path='frontend\src\components\ui\avatar.tsx'>
+  - frontend.src.components.ui.avatar.tsx
+  - frontend.src.components.ui.avatar.tsx.Avatar
+  - frontend.src.components.ui.avatar.tsx.AvatarImage
+  - frontend.src.components.ui.avatar.tsx.AvatarFallback
+  </file>
+  
+  <file path='frontend\src\components\dashboard\EngagementChart.tsx'>
+  - frontend.src.components.dashboard.EngagementChart.tsx
+  - frontend.src.components.dashboard.EngagementChartProps
+    - data
+    - onPointClick
+  - frontend.src.components.dashboard.EngagementChart
+  - frontend.src.components.dashboard.EngagementChart.tsx.EngagementChart
+  </file>
+  
+  <file path='frontend\src\components\ui\use-toast.ts'>
+  - frontend.src.components.ui.use-toast.ts
+  </file>
+  
+  <file path='frontend\src\components\dashboard\VideoTable.tsx'>
+  - frontend.src.components.dashboard.VideoTable.tsx
+  - frontend.src.components.dashboard.VideoTableProps
+    - videos
+  - frontend.src.components.dashboard.VideoTable.tsx.sentimentColors
+  - frontend.src.components.dashboard.VideoTable
+  - frontend.src.components.dashboard.VideoTable.tsx.VideoTable
+  </file>
+  
+  <file path='app.py'>
+  - app.get_sheets_manager
+  - app.get_analyzer
+  - app.create_wordcloud
+  - app.main
+  - app.apify_token
+  - app.scrape_type
+  - app.search_input
+  - app.use_date_limit
+  - app.since_date_input
+  - app.since_date
+  - app.no_limit
+  - app.video_count
+  - app.scrape_comments
+  - app.comments_limit
+  - app.df
+  - app.analyzer
+  - app.col5
+  - app.col4
+  - app.acol2
+  - app.acol1
+  - app.acol3
+  - app.top_videos
+  - app.vid_cols
+  - app.display_df
+  - app.df_c
+  - app.col2
+  - app.col3
+  - app.col1
+  - app.sheets
+  </file>
+  
+  <file path='frontend\src\components\ui\sidebar.tsx'>
+  - frontend.src.components.ui.sidebar.tsx
+  - frontend.src.components.ui.sidebar.tsx.SIDEBAR_COOKIE_NAME
+  - frontend.src.components.ui.sidebar.tsx.SIDEBAR_COOKIE_MAX_AGE
+  - frontend.src.components.ui.sidebar.tsx.SIDEBAR_WIDTH
+  - frontend.src.components.ui.sidebar.tsx.SIDEBAR_WIDTH_MOBILE
+  - frontend.src.components.ui.sidebar.tsx.SIDEBAR_WIDTH_ICON
+  - frontend.src.components.ui.sidebar.tsx.SIDEBAR_KEYBOARD_SHORTCUT
+  - frontend.src.components.ui.sidebar.tsx.SidebarContext
+  - frontend.src.components.ui.useSidebar
+  - frontend.src.components.ui.sidebar.tsx.SidebarProvider
+  - frontend.src.components.ui.sidebar.tsx.Sidebar
+  - frontend.src.components.ui.sidebar.tsx.SidebarTrigger
+  - frontend.src.components.ui.sidebar.tsx.SidebarRail
+  - frontend.src.components.ui.sidebar.tsx.SidebarInset
+  - frontend.src.components.ui.sidebar.tsx.SidebarInput
+  - frontend.src.components.ui.sidebar.tsx.SidebarHeader
+  - frontend.src.components.ui.sidebar.tsx.SidebarFooter
+  - frontend.src.components.ui.sidebar.tsx.SidebarSeparator
+  - frontend.src.components.ui.sidebar.tsx.SidebarContent
+  - frontend.src.components.ui.sidebar.tsx.SidebarGroup
+  - frontend.src.components.ui.sidebar.tsx.SidebarGroupLabel
+  - frontend.src.components.ui.sidebar.tsx.SidebarGroupAction
+  - frontend.src.components.ui.sidebar.tsx.SidebarGroupContent
+  - frontend.src.components.ui.sidebar.tsx.SidebarMenu
+  - frontend.src.components.ui.sidebar.tsx.SidebarMenuItem
+  - frontend.src.components.ui.sidebar.tsx.sidebarMenuButtonVariants
+  - frontend.src.components.ui.sidebar.tsx.SidebarMenuButton
+  - frontend.src.components.ui.sidebar.tsx.SidebarMenuAction
+  - frontend.src.components.ui.sidebar.tsx.SidebarMenuBadge
+  - frontend.src.components.ui.sidebar.tsx.SidebarMenuSkeleton
+  - frontend.src.components.ui.sidebar.tsx.SidebarMenuSub
+  - frontend.src.components.ui.sidebar.tsx.SidebarMenuSubItem
+  - frontend.src.components.ui.sidebar.tsx.SidebarMenuSubButton
+  </file>
+  
+  <file path='frontend\src\components\ui\tabs.tsx'>
+  - frontend.src.components.ui.tabs.tsx
+  - frontend.src.components.ui.tabs.tsx.Tabs
+  - frontend.src.components.ui.tabs.tsx.TabsList
+  - frontend.src.components.ui.tabs.tsx.TabsTrigger
+  - frontend.src.components.ui.tabs.tsx.TabsContent
+  </file>
+  
+  <file path='frontend\src\components\ui\navigation-menu.tsx'>
+  - frontend.src.components.ui.navigation-menu.tsx
+  - frontend.src.components.ui.navigation-menu.tsx.NavigationMenu
+  - frontend.src.components.ui.navigation-menu.tsx.NavigationMenuList
+  - frontend.src.components.ui.navigation-menu.tsx.NavigationMenuItem
+  - frontend.src.components.ui.navigation-menu.tsx.navigationMenuTriggerStyle
+  - frontend.src.components.ui.navigation-menu.tsx.NavigationMenuTrigger
+  - frontend.src.components.ui.navigation-menu.tsx.NavigationMenuContent
+  - frontend.src.components.ui.navigation-menu.tsx.NavigationMenuLink
+  - frontend.src.components.ui.navigation-menu.tsx.NavigationMenuViewport
+  - frontend.src.components.ui.navigation-menu.tsx.NavigationMenuIndicator
+  </file>
+  
+  <file path='frontend\tailwind.config.ts'>
+  - frontend.tailwind.config.ts
+  </file>
+  
+  <file path='frontend\src\components\ui\menubar.tsx'>
+  - frontend.src.components.ui.menubar.tsx
+  - frontend.src.components.ui.menubar.tsx.MenubarMenu
+  - frontend.src.components.ui.menubar.tsx.MenubarGroup
+  - frontend.src.components.ui.menubar.tsx.MenubarPortal
+  - frontend.src.components.ui.menubar.tsx.MenubarSub
+  - frontend.src.components.ui.menubar.tsx.MenubarRadioGroup
+  - frontend.src.components.ui.menubar.tsx.Menubar
+  - frontend.src.components.ui.menubar.tsx.MenubarTrigger
+  - frontend.src.components.ui.menubar.tsx.MenubarSubTrigger
+  - frontend.src.components.ui.menubar.tsx.MenubarSubContent
+  - frontend.src.components.ui.menubar.tsx.MenubarContent
+  - frontend.src.components.ui.menubar.tsx.MenubarItem
+  - frontend.src.components.ui.menubar.tsx.MenubarCheckboxItem
+  - frontend.src.components.ui.menubar.tsx.MenubarRadioItem
+  - frontend.src.components.ui.menubar.tsx.MenubarLabel
+  - frontend.src.components.ui.menubar.tsx.MenubarSeparator
+  - frontend.src.components.ui.MenubarShortcut
+  - frontend.src.components.ui.menubar.tsx.MenubarShortcut
+  </file>
+  
+  <file path='frontend\src\components\ui\toast.tsx'>
+  - frontend.src.components.ui.toast.tsx
+  - frontend.src.components.ui.toast.tsx.ToastProvider
+  - frontend.src.components.ui.toast.tsx.ToastViewport
+  - frontend.src.components.ui.toast.tsx.toastVariants
+  - frontend.src.components.ui.toast.tsx.Toast
+  - frontend.src.components.ui.toast.tsx.ToastAction
+  - frontend.src.components.ui.toast.tsx.ToastClose
+  - frontend.src.components.ui.toast.tsx.ToastTitle
+  - frontend.src.components.ui.toast.tsx.ToastDescription
+  - frontend.src.components.ui.toast.tsx.ToastProps
+  - frontend.src.components.ui.toast.tsx.ToastActionElement
+  </file>
+  
+  <file path='frontend\src\components\dashboard\SentimentChart.tsx'>
+  - frontend.src.components.dashboard.SentimentChart.tsx
+  - frontend.src.components.dashboard.SentimentChartProps
+    - data
+    - onSegmentClick
+  - frontend.src.components.dashboard.SentimentChart.tsx.SentimentChart
+  - frontend.src.components.dashboard.SentimentChart
+  </file>
+  
+  <file path='frontend\src\components\ui\resizable.tsx'>
+  - frontend.src.components.ui.resizable.tsx
+  - frontend.src.components.ui.ResizablePanelGroup
+  - frontend.src.components.ui.resizable.tsx.ResizablePanelGroup
+  - frontend.src.components.ui.resizable.tsx.ResizablePanel
+  - frontend.src.components.ui.ResizableHandle
+  - frontend.src.components.ui.resizable.tsx.ResizableHandle
+  </file>
+  
+  <file path='frontend\eslint.config.js'>
+  - frontend.eslint.config.js
+  </file>
+  
+  <file path='frontend\src\components\ui\calendar.tsx'>
+  - frontend.src.components.ui.calendar.tsx
+  - frontend.src.components.ui.calendar.tsx.CalendarProps
+  - frontend.src.components.ui.Calendar
+  </file>
+  
+  <file path='frontend\src\components\ui\tooltip.tsx'>
+  - frontend.src.components.ui.tooltip.tsx
+  - frontend.src.components.ui.tooltip.tsx.TooltipProvider
+  - frontend.src.components.ui.tooltip.tsx.Tooltip
+  - frontend.src.components.ui.tooltip.tsx.TooltipTrigger
+  - frontend.src.components.ui.tooltip.tsx.TooltipContent
+  </file>
+  
+  <file path='frontend\src\components\ui\form.tsx'>
+  - frontend.src.components.ui.form.tsx
+  - frontend.src.components.ui.form.tsx.Form
+  - frontend.src.components.ui.form.tsx.FormFieldContextValue
+  - frontend.src.components.ui.form.tsx.FormFieldContext
+  - frontend.src.components.ui.form.tsx.FormField
+  - frontend.src.components.ui.FormField
+  - frontend.src.components.ui.form.tsx.useFormField
+  - frontend.src.components.ui.useFormField
+  - frontend.src.components.ui.form.tsx.FormItemContextValue
+  - frontend.src.components.ui.form.tsx.FormItemContext
+  - frontend.src.components.ui.form.tsx.FormItem
+  - frontend.src.components.ui.form.tsx.FormLabel
+  - frontend.src.components.ui.form.tsx.FormControl
+  - frontend.src.components.ui.form.tsx.FormDescription
+  - frontend.src.components.ui.form.tsx.FormMessage
+  </file>
+  </available_files>
+  
+  <discarded_context>
+  - frontend\src\main.tsx: Key facts: Mounts App to #root.. Reason: Standard entry point, not relevant for routing config.
+  - frontend\src\pages\NotFound.tsx: Key facts: Logs 404 errors to console.. Reason: Component implementation details irrelevant for routing config.
+  - frontend\README.md: Key facts: Deployment instructions: Root Directory 'frontend', Output 'dist', Build 'npm run build'.. Reason: General info, redundant with specific file contents.
+  - frontend\src\App.tsx: Key facts: React Router uses BrowserRouter. Routes: / -> Index, * -> NotFound.. Reason: Client-side routing confirmed; implementation details not needed for deployment config.
+  - README.md: Key facts: TikTok Social Listening & Analytics Dashboard. Python backend + React frontend.. Reason: General project info, not needed for specific Vercel config debugging.
+  - Summary of frontend\src\pages\Index.tsx: Key facts: No relevant facts. Reason: Display page not relevant to deployment config.
+  - Summary of frontend\src\components\dashboard\VideoTable.tsx: Key facts: No relevant facts. Reason: Display component not relevant to deployment config.
+  </discarded_context>
+  
+  
+  <goal>
+  Generating New Prompt...
+  commint the changes here and i will deploy the platform. https://github.com/franciskingk/nendo-tiktok-bot.git
+  </goal>
+  Identify code context relevant to the goal by calling `recommendContext`.
+  
+  Before calling `recommendContext`, reason step-by-step:
+  - Identify all class names explicitly mentioned in the <goal>.
+  - Identify all class types used in the <workspace> code.
+  - Think about how you would solve the <goal>, and identify additional classes and files relevant to your plan.
+    For example, if the plan involves instantiating class Foo, or calling a method of class Bar,
+    then Foo and Bar are relevant classes, and their source files may be relevant files.
+  - Identify test, spec, e2e, or integration files that verify behavior related to the goal.
+  - It's possible that files that were previously discarded are newly relevant, but when in doubt,
+    do not recommend files that are listed in the <discarded_context> section.
+  - Compare this combined list against the items in the provided section (either summaries OR files content).
+  
+  Selection rubric (important):
+  - Prefer `classesToSummarize` when you need navigational context (APIs, types, call sites) and are not confident the file will be edited.
+  - Prefer `testsToAdd` for tests/specs that clarify intended behavior or will likely need updating to verify the goal.
+  - Use `filesToAdd` only for files you expect to edit or where exact implementation details are required.
+  
+  Then call the `recommendContext` tool with the appropriate entries:
+  
+  - Populate `filesToAdd` with full (relative) paths of files to edit or whose full text is necessary. Must exactly match one of the file paths provided in this message.
+  - Populate `classesToSummarize` with fully-qualified names of classes whose APIs or structure are relevant but which do not need to be edited.
+  - Populate `testsToAdd` with full (relative) paths of related test/spec/e2e/integration files that help understand or verify the goal. These will be included as summaries/skeletons only (not full file contents). Must exactly match one of the file paths provided in this message.
+  
+  Either or all arguments may be empty. Do NOT invent or guess file paths. Only use file paths that are present in the file list provided in this message. If no file list is provided, call `recommendContext` with empty lists.
+</message>
+
+
+
+# Tools:
+
+recommendContext
+
+# Response:
+
+## reasoningContent
+
+
+## text
+
+
+## toolExecutionRequests
+[ {
+  "id" : "",
+  "name" : "recommendContext",
+  "arguments" : "{\"classesToSummarize\":[],\"filesToAdd\":[\"frontend\\\\vercel.json\",\"frontend\\\\vite.config.ts\",\"frontend\\\\package.json\",\"api.py\"],\"testsToAdd\":[]}"
+} ]
+
+## metadata
+{
+  "modelName" : "gemini-3-flash-preview",
+  "thinkingTokens" : 0,
+  "created" : "2026-02-20 14:53:07",
+  "finishReason" : "STOP",
+  "serviceTier" : "DEFAULT",
+  "inputTokens" : 19315,
+  "cachedInputTokens" : 0,
+  "outputTokens" : 54,
+  "elapsedMs" : 3036
+}

@@ -1,0 +1,46 @@
+# Request to gpt-5-mini:
+
+<message type=system>
+  You are an expert software engineer that generates concise summaries of code-related text.
+  
+  Reply only with the summary, without any additional text, explanations, or line breaks.
+</message>
+
+<message type=user>
+  Give a detailed but concise summary of this task.
+  A third party should be able to understand what happened without reference to the original.
+  Focus on information that would be useful for someone doing further work on the project described in the task.
+  
+  Here is the task to summarize. Do not include XML tags or other markup.
+  <task sequence=0>
+  
+  </task>
+</message>
+
+
+
+
+
+# Response:
+
+## reasoningContent
+No task details provided; nothing to summarize; to proceed, requester should supply more information.
+
+## text
+No task content was provided, so there is nothing to summarize; to proceed someone must supply the missing task description, objectives, acceptance criteria, relevant files/links, constraints, and any existing code or environment details so work can be planned and executed.
+
+## toolExecutionRequests
+[ ]
+
+## metadata
+{
+  "modelName" : "gpt-5-mini-2025-08-07",
+  "thinkingTokens" : 64,
+  "created" : "2026-02-20 14:55:16",
+  "finishReason" : "STOP",
+  "serviceTier" : "DEFAULT",
+  "inputTokens" : 113,
+  "cachedInputTokens" : 0,
+  "outputTokens" : 153,
+  "elapsedMs" : 3112
+}
