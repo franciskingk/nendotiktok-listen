@@ -242,6 +242,7 @@ export const useTikTokData = () => {
                     video_count: limit,
                     since_date: sinceDate,
                     apify_token: token,
+                    sheet_url: sheetUrl, // Pass sheet_url from current state
                     scrape_comments: scrapeComments,
                     comments_limit: commentsLimit
                 })

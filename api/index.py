@@ -25,6 +25,12 @@ except ImportError as e:
     # Fallback/Dummy classes if imports fail (to prevent deploy crash)
     from scraper import TikTokScraper
     scrape_hashtag_sync = None
+    class TikTokAnalyzer:
+        def calculate_engagement_rate(self, df): return df
+        def add_sentiment_analysis(self, df, **kwargs): return df
+    class SheetsManager:
+        def __init__(self, **kwargs): pass
+        def connect(self): return False
 
 app = FastAPI(title="TikTok Pulse API")
 
@@ -130,6 +136,7 @@ class ScrapeRequest(BaseModel):
     video_count: Optional[int] = 50
     since_date: Optional[str] = None
     apify_token: str
+    sheet_url: Optional[str] = None
     scrape_comments: bool = False
     comments_limit: Optional[int] = 0
 
@@ -240,18 +247,54 @@ async def run_scrape(request: ScrapeRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-async def process_webhook_results(run_id: str, dataset_id: str):
+@app.post("/api/scrape")
+async def legacy_scrape(request: ScrapeRequest):
+    """Old endpoint kept for compatibility. Re-routes to async flow if on Vercel."""
+    if os.environ.get("VERCEL") or os.environ.get("RAILWAY_ENVIRONMENT"):
+        return await run_scrape_async(request)
+    
+    # Local synchronous behavior (preserved for local dev if desired)
+    try:
+        since_dt = None
+        if request.since_date:
+            try: since_dt = datetime.fromisoformat(request.since_date)
+            except: pass
+
+        if not scrape_hashtag_sync:
+            raise HTTPException(status_code=500, detail="Scraper module not loaded correctly")
+
+        results = []
+        loop = asyncio.get_event_loop()
+        if request.scrape_type == "Hashtag":
+            results = await loop.run_in_executor(None, scrape_hashtag_sync, request.search_input, request.video_count, since_dt, request.apify_token, request.comments_limit if request.scrape_comments else 0)
+        elif request.scrape_type == "Username":
+            results = await loop.run_in_executor(None, scrape_user_sync, request.search_input, request.video_count, since_dt, request.apify_token, request.comments_limit if request.scrape_comments else 0)
+        else: # Keyword
+            results = await loop.run_in_executor(None, scrape_search_sync, request.search_input, request.video_count, since_dt, request.apify_token, request.comments_limit if request.scrape_comments else 0)
+        
+        # Save results...
+        manager = SheetsManager(sheet_url=request.sheet_url or load_config().get("sheet_url"))
+        if manager.connect():
+             manager.append_data(results)
+        
+        return {"success": True, "video_count": len(results)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+async def process_webhook_results(run_id: str, dataset_id: str, sheet_url: str = None):
     """Background task to fetch and save findings from Apify"""
     try:
         config = load_config()
-        scraper = TikTokScraper(config.get("apify_token"))
+        token = config.get("apify_token") or os.environ.get("APIFY_TOKEN")
+        scraper = TikTokScraper(token)
         results = scraper.fetch_results(dataset_id)
         
         if results:
-            manager = SheetsManager(sheet_url=config.get("sheet_url") if config.get("sheet_url") else None)
+            target_sheet = sheet_url or config.get("sheet_url")
+            print(f"[INFO] Webhook saving {len(results)} results to {target_sheet}")
+            manager = SheetsManager(sheet_url=target_sheet)
             if manager.connect():
                 manager.append_data(results)
-                # Note: Comments mapping might need more logic here if requested
         
         print(f"Async Scrape Finished for run {run_id}. Saved results to Sheets.")
     except Exception as e:
@@ -264,9 +307,10 @@ async def apify_webhook(request: Request, background_tasks: BackgroundTasks):
         data = await request.json()
         run_id = data.get("runId")
         dataset_id = data.get("datasetId")
+        sheet_url = data.get("sheetUrl")
         
         if run_id and dataset_id:
-            background_tasks.add_task(process_webhook_results, run_id, dataset_id)
+            background_tasks.add_task(process_webhook_results, run_id, dataset_id, sheet_url)
             return {"status": "processing"}
         return {"status": "invalid payload"}
     except Exception as e:
@@ -290,17 +334,18 @@ async def run_scrape_async(request: ScrapeRequest):
             request.scrape_type,
             request.search_input,
             request.video_count,
-            webhook_url=webhook_url
+            webhook_url=webhook_url,
+            sheet_url=request.sheet_url or config.get("sheet_url")
         )
         
         if run_info:
             return {
                 "success": True, 
-                "message": "Scrape initiated successfully. Results will appear in Google Sheets in a few minutes.",
+                "message": "Scrape initiated! Results will appear in Google Sheets in a few minutes.",
                 "run_id": run_info.get("id")
             }
         else:
-            return {"success": False, "error": "Failed to initiate scrape job."}
+            return {"success": False, "error": "Failed to initiate scrape job. Check your Apify Token."}
             
     except Exception as e:
         print(f"Async Scrape Error: {e}")

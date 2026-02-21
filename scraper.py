@@ -141,7 +141,7 @@ class TikTokScraper:
             print(f"[ERROR] Error running Apify actor: {e}")
             return []
 
-    async def start_scrape_async(self, scrape_type, search_input, count=None, since_date=None, comments_per_video=0, webhook_url=None):
+    async def start_scrape_async(self, scrape_type, search_input, count=None, since_date=None, comments_per_video=0, webhook_url=None, sheet_url=None):
         """Start a scrape job and return the run info immediately"""
         if not self.client:
             return None
@@ -162,11 +162,16 @@ class TikTokScraper:
 
         try:
             # Start the run
+            payload_template = "{\n    \"runId\": {{resource.id}},\n    \"datasetId\": {{resource.defaultDatasetId}},\n    \"scrapeType\": \"" + scrape_type + "\""
+            if sheet_url:
+                payload_template += ",\n    \"sheetUrl\": \"" + sheet_url + "\""
+            payload_template += "\n}"
+
             run = self.client.actor(self.actor_id).start(run_input=run_input, webhooks=[
                 {
                     "eventTypes": ["ACTOR.RUN.SUCCEEDED"],
                     "requestUrl": webhook_url,
-                    "payloadTemplate": "{\n    \"runId\": {{resource.id}},\n    \"datasetId\": {{resource.defaultDatasetId}},\n    \"scrapeType\": \"" + scrape_type + "\"\n}"
+                    "payloadTemplate": payload_template
                 }
             ] if webhook_url else [])
             
