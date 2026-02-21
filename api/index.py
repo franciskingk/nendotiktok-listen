@@ -338,14 +338,15 @@ async def run_scrape_async(request: ScrapeRequest):
             sheet_url=request.sheet_url or config.get("sheet_url")
         )
         
-        if run_info:
+        if run_info and "id" in run_info:
             return {
                 "success": True, 
                 "message": "Scrape initiated! Results will appear in Google Sheets in a few minutes.",
                 "run_id": run_info.get("id")
             }
         else:
-            return {"success": False, "error": "Failed to initiate scrape job. Check your Apify Token."}
+            error_details = run_info.get("error") if run_info else "Unknown error"
+            return {"success": False, "error": f"Failed to initiate: {error_details}. Check your Apify Token."}
             
     except Exception as e:
         print(f"Async Scrape Error: {e}")

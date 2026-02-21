@@ -177,8 +177,9 @@ class TikTokScraper:
             
             return run
         except Exception as e:
-            print(f"Error starting async scrape: {e}")
-            return None
+            error_msg = str(e)
+            print(f"Error starting async scrape: {error_msg}")
+            return {"error": error_msg}
 
     def fetch_results(self, dataset_id, comments_per_video=0):
         """Fetch results from a completed dataset"""
