@@ -233,7 +233,7 @@ export const useTikTokData = () => {
                 setScrapingProgress(prev => (prev < 95 ? prev + (95 - prev) * 0.1 : prev));
             }, 1500);
 
-            const response = await fetch('/api/scrape', {
+            const response = await fetch('/api/scrape/async', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -252,8 +252,8 @@ export const useTikTokData = () => {
 
             const data = await response.json();
             if (data.success) {
-                toast.success(`Scraped ${data.video_count} videos and ${data.comment_count} comments!`);
-                await fetchData();
+                toast.success(data.message || "Scrape initiated! Results will appear in a few minutes.");
+                // We don't fetchData immediately as it's still running on Apify
             } else {
                 toast.error(data.error || "Scraping failed");
             }

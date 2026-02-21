@@ -141,6 +141,55 @@ class TikTokScraper:
             print(f"[ERROR] Error running Apify actor: {e}")
             return []
 
+    async def start_scrape_async(self, scrape_type, search_input, count=None, since_date=None, comments_per_video=0, webhook_url=None):
+        """Start a scrape job and return the run info immediately"""
+        if not self.client:
+            return None
+        
+        limit = count if count else 100
+        run_input = {
+            "resultsPerPage": limit,
+            "shouldDownloadVideos": False,
+            "commentsPerVideo": comments_per_video
+        }
+        
+        if scrape_type == "Hashtag":
+            run_input["hashtags"] = [h.strip() for h in search_input.split(',')]
+        elif scrape_type == "Username":
+            run_input["profiles"] = [u.strip() for u in search_input.split(',')]
+        else:
+            run_input["searchQueries"] = [q.strip() for q in search_input.split(',')]
+
+        try:
+            # Start the run
+            run = self.client.actor(self.actor_id).start(run_input=run_input, webhooks=[
+                {
+                    "eventTypes": ["ACTOR.RUN.SUCCEEDED"],
+                    "requestUrl": webhook_url,
+                    "payloadTemplate": "{\n    \"runId\": {{resource.id}},\n    \"datasetId\": {{resource.defaultDatasetId}},\n    \"scrapeType\": \"" + scrape_type + "\"\n}"
+                }
+            ] if webhook_url else [])
+            
+            return run
+        except Exception as e:
+            print(f"Error starting async scrape: {e}")
+            return None
+
+    def fetch_results(self, dataset_id, comments_per_video=0):
+        """Fetch results from a completed dataset"""
+        if not self.client: return []
+        
+        results = []
+        try:
+            dataset_items = self.client.dataset(dataset_id).iterate_items()
+            for item in dataset_items:
+                mapped = self._map_result(item, extract_comments=(comments_per_video > 0))
+                if mapped: results.append(mapped)
+            return results
+        except Exception as e:
+            print(f"Error fetching results: {e}")
+            return []
+
     async def scrape_hashtag(self, hashtags, count=None, since_date=None, comments_per_video=0):
         if isinstance(hashtags, str):
             hashtags = [h.strip() for h in hashtags.split(',')]

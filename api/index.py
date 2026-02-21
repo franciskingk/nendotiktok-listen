@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os.path
@@ -17,18 +17,13 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import existing modules
 try:
-    from scraper import scrape_hashtag_sync, scrape_user_sync, scrape_search_sync
+    from scraper import scrape_hashtag_sync, scrape_user_sync, scrape_search_sync, TikTokScraper
     from analysis import TikTokAnalyzer
     from sheets import SheetsManager
 except ImportError as e:
     print(f"Import Error: {e}")
     # Fallback/Dummy classes if imports fail (to prevent deploy crash)
-    class TikTokAnalyzer:
-        def calculate_engagement_rate(self, df): return df
-        def add_sentiment_analysis(self, df, **kwargs): return df
-    class SheetsManager:
-        def __init__(self, **kwargs): pass
-        def connect(self): return False
+    from scraper import TikTokScraper
     scrape_hashtag_sync = None
 
 app = FastAPI(title="TikTok Pulse API")
@@ -243,6 +238,72 @@ async def run_scrape(request: ScrapeRequest):
             return {"success": False, "error": "No results found"}
             
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+async def process_webhook_results(run_id: str, dataset_id: str):
+    """Background task to fetch and save findings from Apify"""
+    try:
+        config = load_config()
+        scraper = TikTokScraper(config.get("apify_token"))
+        results = scraper.fetch_results(dataset_id)
+        
+        if results:
+            manager = SheetsManager(sheet_url=config.get("sheet_url") if config.get("sheet_url") else None)
+            if manager.connect():
+                manager.append_data(results)
+                # Note: Comments mapping might need more logic here if requested
+        
+        print(f"Async Scrape Finished for run {run_id}. Saved results to Sheets.")
+    except Exception as e:
+        print(f"Webhook processing error: {e}")
+
+@app.post("/api/webhook")
+async def apify_webhook(request: Request, background_tasks: BackgroundTasks):
+    """Webhook endpoint for Apify to notify completion"""
+    try:
+        data = await request.json()
+        run_id = data.get("runId")
+        dataset_id = data.get("datasetId")
+        
+        if run_id and dataset_id:
+            background_tasks.add_task(process_webhook_results, run_id, dataset_id)
+            return {"status": "processing"}
+        return {"status": "invalid payload"}
+    except Exception as e:
+        print(f"Webhook error: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.post("/api/scrape/async")
+async def run_scrape_async(request: ScrapeRequest):
+    """Initiate a scrape job without waiting for it to finish (Vercel compatible)"""
+    try:
+        config = load_config()
+        # Detect host for webhook URL
+        host = os.environ.get("VERCEL_URL", "localhost:8001")
+        if not host.startswith("http"):
+             host = f"https://{host}"
+        
+        webhook_url = f"{host}/api/webhook"
+        
+        scraper = TikTokScraper(request.apify_token)
+        run_info = await scraper.start_scrape_async(
+            request.scrape_type,
+            request.search_input,
+            request.video_count,
+            webhook_url=webhook_url
+        )
+        
+        if run_info:
+            return {
+                "success": True, 
+                "message": "Scrape initiated successfully. Results will appear in Google Sheets in a few minutes.",
+                "run_id": run_info.get("id")
+            }
+        else:
+            return {"success": False, "error": "Failed to initiate scrape job."}
+            
+    except Exception as e:
+        print(f"Async Scrape Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # Server static files for Production
