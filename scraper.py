@@ -169,9 +169,9 @@ class TikTokScraper:
 
             run = self.client.actor(self.actor_id).start(run_input=run_input, webhooks=[
                 {
-                    "eventTypes": ["ACTOR.RUN.SUCCEEDED"],
-                    "requestUrl": webhook_url,
-                    "payloadTemplate": payload_template
+                    "event_types": ["ACTOR.RUN.SUCCEEDED"],
+                    "request_url": webhook_url,
+                    "payload_template": payload_template
                 }
             ] if webhook_url else [])
             
