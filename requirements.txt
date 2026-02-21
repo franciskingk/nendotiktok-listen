@@ -10,3 +10,6 @@ google-auth-httplib2
 vaderSentiment
 plotly
 openpyxl
+uvicorn
+python-multipart
+aiofiles

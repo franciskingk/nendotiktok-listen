@@ -1,4 +1,7 @@
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+import os.path
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
@@ -141,7 +144,7 @@ def health_check():
         "status": "healthy", 
         "timestamp": datetime.now().isoformat(),
         "credentials_found": os.path.exists("credentials.json"),
-        "environment": "vercel"
+        "environment": os.environ.get("RAILWAY_ENVIRONMENT", "vercel")
     }
 
 @app.get("/api/data")
@@ -241,3 +244,21 @@ async def run_scrape(request: ScrapeRequest):
             
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# Server static files for Production
+if os.path.exists("dist"):
+    app.mount("/assets", StaticFiles(directory="dist/assets"), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        # Exclude /api routes
+        if full_path.startswith("api"):
+             return {"detail": "Not Found"}
+             
+        # Check if the file exists in dist
+        file_path = os.path.join("dist", full_path)
+        if os.path.isfile(file_path):
+            return FileResponse(file_path)
+            
+        # Fallback to SPA index.html
+        return FileResponse("dist/index.html")
