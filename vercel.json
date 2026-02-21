@@ -5,12 +5,11 @@
       "destination": "/api/index.py"
     },
     {
-      "source": "/((?!api|favicon.ico|logo-icon.svg|logo.png|assets|robots.txt).*)",
-      "destination": "/public/index.html"
+      "handle": "filesystem"
     },
     {
       "source": "/(.*)",
-      "destination": "/public/$1"
+      "destination": "/index.html"
     }
   ]
 }
