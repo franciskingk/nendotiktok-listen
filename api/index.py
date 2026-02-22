@@ -147,13 +147,22 @@ class ScrapeRequest(BaseModel):
 @app.get("/api/health")
 def health_check():
     db = SupabaseManager()
+    
+    # Check if supabase library is actually working
+    try:
+        from supabase import create_client
+        lib_found = True
+    except ImportError:
+        lib_found = False
+        
     return {
         "status": "healthy", 
         "timestamp": datetime.now().isoformat(),
-        "credentials_found": os.path.exists("credentials.json"),
+        "supabase_library_loaded": lib_found,
         "supabase_connected": db.is_connected(),
         "supabase_url_detected": bool(os.environ.get("SUPABASE_URL")),
         "supabase_key_detected": bool(os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_KEY")),
+        "credentials_found": os.path.exists("credentials.json"),
         "environment": os.environ.get("RAILWAY_ENVIRONMENT", "vercel")
     }
 
@@ -300,20 +309,24 @@ async def process_webhook_results(run_id: str, dataset_id: str, sheet_url: str =
                     all_comments.extend(video['scraped_comments'])
                     del video['scraped_comments']
 
-            # Save to Supabase
+            # 1. Save to Supabase (PRIORITY)
             db = SupabaseManager()
             if db.is_connected():
-                db.save_videos(results)
-                if all_comments:
-                    db.save_comments(all_comments)
-
-            # Backup to Sheets
-            target_sheet = sheet_url or config.get("sheet_url")
-            manager = SheetsManager(sheet_url=target_sheet)
-            if manager.connect():
-                manager.append_data(results)
-                if all_comments:
-                    manager.append_comments(all_comments)
+                v_count = db.save_videos(results)
+                c_count = db.save_comments(all_comments) if all_comments else 0
+                print(f"[INFO] Webhook saved {v_count} videos and {c_count} comments to Supabase.")
+            else:
+                # 2. Backup to Sheets (ONLY if Supabase is offline)
+                target_sheet = sheet_url or config.get("sheet_url")
+                if target_sheet:
+                    print(f"[INFO] Supabase offline, attempting Sheets backup to {target_sheet}")
+                    manager = SheetsManager(sheet_url=target_sheet)
+                    if manager.connect():
+                        manager.append_data(results)
+                        if all_comments:
+                            manager.append_comments(all_comments)
+                else:
+                    print("[WARN] No storage available (Supabase offline and no Sheet URL).")
         
         print(f"Async Scrape Finished for run {run_id}. Saved results to Sheets.")
     except Exception as e:
