@@ -1,11 +1,10 @@
 {
-  "name": "nendo-tiktok-bot",
+  "name": "tiktok-bot",
   "version": "1.0.0",
-  "private": true,
+  "description": "TikTok Social Listening Dashboard",
   "scripts": {
-    "build": "cd frontend && npm install && npm run build && cd .. && mkdir -p dist && cp -r frontend/dist/* dist/"
+    "build": "cd frontend && npm install && npm run build && cd .. && rm -rf dist && cp -r frontend/dist ./dist",
+    "install": "pip install -r requirements.txt"
   },
-  "engines": {
-    "node": "24.x"
-  }
+  "dependencies": {}
 }

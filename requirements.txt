@@ -15,7 +15,4 @@ openpyxl
 uvicorn
 python-multipart
 aiofiles
-streamlit
-wordcloud
-matplotlib
 supabase
