@@ -21,7 +21,7 @@ import { X } from 'lucide-react';
 const Index = () => {
   const {
     videos, sentiment, timeline, loading, scrapingProgress,
-    apiConnected, sheetsConnected, sheetUrl, apifyToken: savedToken, groups, activeGroupName,
+    apiConnected, sheetsConnected, supabaseConnected, sheetUrl, apifyToken: savedToken, groups, activeGroupName,
     setActiveGroupName, fetchSettings, updateSettings, addGroup, deleteGroup,
     fetchData, runScrape, exportData, credentialsFound
   } = useTikTokData();
@@ -150,6 +150,12 @@ const Index = () => {
           <div className="flex items-center gap-3 text-[10px]">
             <span className={cn("px-2 py-0.5 rounded-full border", apiConnected ? "bg-green/10 text-green border-green/20" : "bg-destructive/10 text-destructive border-destructive/20")}>
               API: {apiConnected ? "CONNECTED" : "OFFLINE"}
+            </span>
+            <span className={cn("px-2 py-0.5 rounded-full border", supabaseConnected ? "bg-blue/10 text-blue border-blue/20" : "bg-muted/30 text-muted-foreground border-transparent")}>
+              SUPABASE: {supabaseConnected ? "ACTIVE" : "OFFLINE"}
+            </span>
+            <span className={cn("px-2 py-0.5 rounded-full border", sheetsConnected ? "bg-green/10 text-green border-green/20" : "bg-orange/10 text-orange border-orange/20")}>
+              SHEETS: {sheetsConnected ? "CONNECTED" : "STANDBY"}
             </span>
           </div>
         </CardHeader>

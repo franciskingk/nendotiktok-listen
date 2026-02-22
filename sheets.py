@@ -33,13 +33,22 @@ class SheetsManager:
                 'https://www.googleapis.com/auth/drive'
             ]
             
-            if not os.path.exists(self.credentials_file):
-                print(f"[WARN] Credentials file not found: {self.credentials_file}")
+            # Use credentials from environment variable if available (for Vercel/Railway)
+            creds_json = os.environ.get("GOOGLE_CREDENTIALS")
+            if creds_json:
+                print("[INFO] Using credentials from GOOGLE_CREDENTIALS environment variable")
+                import json
+                creds_dict = json.loads(creds_json)
+                creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+            elif os.path.exists(self.credentials_file):
+                print(f"[INFO] Using credentials from file: {self.credentials_file}")
+                creds = ServiceAccountCredentials.from_json_keyfile_name(
+                    self.credentials_file, scope
+                )
+            else:
+                print(f"[WARN] Credentials not found (env GOOGLE_CREDENTIALS or file {self.credentials_file})")
                 return False
-            
-            creds = ServiceAccountCredentials.from_json_keyfile_name(
-                self.credentials_file, scope
-            )
+                
             self.client = gspread.authorize(creds)
             
             # Try to open by URL first (most reliable), then by name

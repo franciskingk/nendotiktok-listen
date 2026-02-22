@@ -162,7 +162,7 @@ class TikTokScraper:
 
         try:
             # Start the run
-            payload_template = "{\n    \"runId\": {{resource.id}},\n    \"datasetId\": {{resource.defaultDatasetId}},\n    \"scrapeType\": \"" + scrape_type + "\""
+            payload_template = "{\n    \"runId\": {{resource.id}},\n    \"datasetId\": {{resource.defaultDatasetId}},\n    \"scrapeType\": \"" + scrape_type + "\",\n    \"commentsLimit\": " + str(comments_per_video) + ",\n    \"apifyToken\": \"" + self.token + "\""
             if sheet_url:
                 payload_template += ",\n    \"sheetUrl\": \"" + sheet_url + "\""
             payload_template += "\n}"

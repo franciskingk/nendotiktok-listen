@@ -20,9 +20,10 @@ try:
     from scraper import scrape_hashtag_sync, scrape_user_sync, scrape_search_sync, TikTokScraper
     from analysis import TikTokAnalyzer
     from sheets import SheetsManager
+    from database import SupabaseManager
 except ImportError as e:
     print(f"Import Error: {e}")
-    # Fallback/Dummy classes if imports fail (to prevent deploy crash)
+    # Fallback/Dummy classes if imports fail
     from scraper import TikTokScraper
     scrape_hashtag_sync = None
     class TikTokAnalyzer:
@@ -31,6 +32,9 @@ except ImportError as e:
     class SheetsManager:
         def __init__(self, **kwargs): pass
         def connect(self): return False
+    class SupabaseManager:
+        def __init__(self, **kwargs): pass
+        def is_connected(self): return False
 
 app = FastAPI(title="TikTok Pulse API")
 
@@ -142,10 +146,12 @@ class ScrapeRequest(BaseModel):
 
 @app.get("/api/health")
 def health_check():
+    db = SupabaseManager()
     return {
         "status": "healthy", 
         "timestamp": datetime.now().isoformat(),
         "credentials_found": os.path.exists("credentials.json"),
+        "supabase_connected": db.is_connected(),
         "environment": os.environ.get("RAILWAY_ENVIRONMENT", "vercel")
     }
 
@@ -157,18 +163,31 @@ async def get_data():
         videos = []
         comments = []
         
-        sheet_url = config.get("sheet_url")
-        manager = SheetsManager(sheet_url=sheet_url if sheet_url else None)
-        
-        if manager.connect():
-            df_videos = manager.get_all_data()
-            df_comments = manager.get_all_comments()
-            
+        # Try Supabase First (Priority)
+        db = SupabaseManager()
+        if db.is_connected():
+            df_videos = db.get_all_videos()
+            df_comments = db.get_all_comments()
             if not df_videos.empty:
                 videos = df_videos.to_dict(orient='records')
-            
+                print(f"[INFO] Loaded {len(videos)} videos from Supabase")
             if not df_comments.empty:
                 comments = df_comments.to_dict(orient='records')
+        
+        # Fallback to Sheets if Supabase is empty/not connected
+        if not videos:
+            sheet_url = config.get("sheet_url")
+            manager = SheetsManager(sheet_url=sheet_url if sheet_url else None)
+            
+            if manager.connect():
+                df_videos = manager.get_all_data()
+                df_comments = manager.get_all_comments()
+                
+                if not df_videos.empty:
+                    videos = df_videos.to_dict(orient='records')
+                
+                if not df_comments.empty:
+                    comments = df_comments.to_dict(orient='records')
 
         df_videos = pd.DataFrame(videos)
         df_comments = pd.DataFrame(comments)
@@ -195,6 +214,14 @@ async def get_data():
 
 @app.post("/api/scrape")
 async def run_scrape(request: ScrapeRequest):
+    """
+    Main scraping endpoint. 
+    On Vercel/Cloud, it uses the async flow to avoid timeouts.
+    On Local, it uses the sync flow.
+    """
+    if os.environ.get("VERCEL") or os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("USE_ASYNC_SCRAPE"):
+        return await run_scrape_async(request)
+        
     try:
         config = load_config()
         since_dt = None
@@ -210,15 +237,17 @@ async def run_scrape(request: ScrapeRequest):
         results = []
         loop = asyncio.get_event_loop()
         
+        comments_limit = request.comments_limit if request.scrape_comments else 0
+        
         if request.scrape_type == "Hashtag":
             results = await loop.run_in_executor(None, scrape_hashtag_sync, 
-                        request.search_input, request.video_count, since_dt, request.apify_token, request.comments_limit if request.scrape_comments else 0)
+                        request.search_input, request.video_count, since_dt, request.apify_token, comments_limit)
         elif request.scrape_type == "Username":
             results = await loop.run_in_executor(None, scrape_user_sync, 
-                        request.search_input, request.video_count, since_dt, request.apify_token, request.comments_limit if request.scrape_comments else 0)
+                        request.search_input, request.video_count, since_dt, request.apify_token, comments_limit)
         else: # Keyword
             results = await loop.run_in_executor(None, scrape_search_sync, 
-                        request.search_input, request.video_count, since_dt, request.apify_token, request.comments_limit if request.scrape_comments else 0)
+                        request.search_input, request.video_count, since_dt, request.apify_token, comments_limit)
         
         if results:
             all_comments = []
@@ -227,10 +256,15 @@ async def run_scrape(request: ScrapeRequest):
                     all_comments.extend(video['scraped_comments'])
                     del video['scraped_comments']
             
-            # save_local_data(...) # Disabled
-            
-            # Try to save to Sheets if connected
-            manager = SheetsManager(sheet_url=config.get("sheet_url") if config.get("sheet_url") else None)
+            # Save to Supabase (Priority)
+            db = SupabaseManager()
+            if db.is_connected():
+                v_count = db.save_videos(results)
+                c_count = db.save_comments(all_comments) if all_comments else 0
+                print(f"[INFO] Saved {v_count} videos and {c_count} comments to Supabase")
+
+            # Also try to save to Sheets as backup
+            manager = SheetsManager(sheet_url=request.sheet_url or config.get("sheet_url"))
             if manager.connect():
                 manager.append_data(results)
                 if all_comments:
@@ -245,56 +279,39 @@ async def run_scrape(request: ScrapeRequest):
             return {"success": False, "error": "No results found"}
             
     except Exception as e:
+        print(f"Scrape Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/scrape")
-async def legacy_scrape(request: ScrapeRequest):
-    """Old endpoint kept for compatibility. Re-routes to async flow if on Vercel."""
-    if os.environ.get("VERCEL") or os.environ.get("RAILWAY_ENVIRONMENT"):
-        return await run_scrape_async(request)
-    
-    # Local synchronous behavior (preserved for local dev if desired)
-    try:
-        since_dt = None
-        if request.since_date:
-            try: since_dt = datetime.fromisoformat(request.since_date)
-            except: pass
-
-        if not scrape_hashtag_sync:
-            raise HTTPException(status_code=500, detail="Scraper module not loaded correctly")
-
-        results = []
-        loop = asyncio.get_event_loop()
-        if request.scrape_type == "Hashtag":
-            results = await loop.run_in_executor(None, scrape_hashtag_sync, request.search_input, request.video_count, since_dt, request.apify_token, request.comments_limit if request.scrape_comments else 0)
-        elif request.scrape_type == "Username":
-            results = await loop.run_in_executor(None, scrape_user_sync, request.search_input, request.video_count, since_dt, request.apify_token, request.comments_limit if request.scrape_comments else 0)
-        else: # Keyword
-            results = await loop.run_in_executor(None, scrape_search_sync, request.search_input, request.video_count, since_dt, request.apify_token, request.comments_limit if request.scrape_comments else 0)
-        
-        # Save results...
-        manager = SheetsManager(sheet_url=request.sheet_url or load_config().get("sheet_url"))
-        if manager.connect():
-             manager.append_data(results)
-        
-        return {"success": True, "video_count": len(results)}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-async def process_webhook_results(run_id: str, dataset_id: str, sheet_url: str = None):
+async def process_webhook_results(run_id: str, dataset_id: str, sheet_url: str = None, comments_limit: int = 0, apify_token: str = None):
     """Background task to fetch and save findings from Apify"""
     try:
         config = load_config()
-        token = config.get("apify_token") or os.environ.get("APIFY_TOKEN")
+        # Use the token passed in the webhook, or fallback to config/env
+        token = apify_token or config.get("apify_token") or os.environ.get("APIFY_TOKEN")
         scraper = TikTokScraper(token)
-        results = scraper.fetch_results(dataset_id)
+        results = scraper.fetch_results(dataset_id, comments_per_video=comments_limit)
         
         if results:
+            all_comments = []
+            for video in results:
+                if 'scraped_comments' in video:
+                    all_comments.extend(video['scraped_comments'])
+                    del video['scraped_comments']
+
+            # Save to Supabase
+            db = SupabaseManager()
+            if db.is_connected():
+                db.save_videos(results)
+                if all_comments:
+                    db.save_comments(all_comments)
+
+            # Backup to Sheets
             target_sheet = sheet_url or config.get("sheet_url")
-            print(f"[INFO] Webhook saving {len(results)} results to {target_sheet}")
             manager = SheetsManager(sheet_url=target_sheet)
             if manager.connect():
                 manager.append_data(results)
+                if all_comments:
+                    manager.append_comments(all_comments)
         
         print(f"Async Scrape Finished for run {run_id}. Saved results to Sheets.")
     except Exception as e:
@@ -308,9 +325,11 @@ async def apify_webhook(request: Request, background_tasks: BackgroundTasks):
         run_id = data.get("runId")
         dataset_id = data.get("datasetId")
         sheet_url = data.get("sheetUrl")
+        comments_limit = data.get("commentsLimit", 0)
+        apify_token = data.get("apifyToken")
         
         if run_id and dataset_id:
-            background_tasks.add_task(process_webhook_results, run_id, dataset_id, sheet_url)
+            background_tasks.add_task(process_webhook_results, run_id, dataset_id, sheet_url, comments_limit, apify_token)
             return {"status": "processing"}
         return {"status": "invalid payload"}
     except Exception as e:
@@ -321,31 +340,44 @@ async def apify_webhook(request: Request, background_tasks: BackgroundTasks):
 async def run_scrape_async(request: ScrapeRequest):
     """Initiate a scrape job without waiting for it to finish (Vercel compatible)"""
     try:
-        config = load_config()
         # Detect host for webhook URL
-        host = os.environ.get("VERCEL_URL", "localhost:8001")
+        # VERCEL_URL is just the domain, we need to ensure it's a full URL
+        host = os.environ.get("VERCEL_URL", os.environ.get("PUBLIC_URL", "localhost:8001"))
         if not host.startswith("http"):
-             host = f"https://{host}"
+             # Check if it's localhost
+             if "localhost" in host:
+                 host = f"http://{host}"
+             else:
+                 host = f"https://{host}"
         
         webhook_url = f"{host}/api/webhook"
         
         scraper = TikTokScraper(request.apify_token)
+        
+        # Add comments limit to the webhook payload template
+        comments_limit = request.comments_limit if request.scrape_comments else 0
+        
         run_info = await scraper.start_scrape_async(
             request.scrape_type,
             request.search_input,
             request.video_count,
+            comments_per_video=comments_limit,
             webhook_url=webhook_url,
             sheet_url=request.sheet_url or config.get("sheet_url")
         )
+
+        # We need to ensure Apify sends back the commentsLimit if we want it preserved
+        # However, scraper.py might need an update to include it in payload_template
+        # Let's fix scraper.py next.
         
-        if run_info and "id" in run_info:
+        if run_info and (isinstance(run_info, dict) and "id" in run_info):
             return {
                 "success": True, 
                 "message": "Scrape initiated! Results will appear in Google Sheets in a few minutes.",
                 "run_id": run_info.get("id")
             }
         else:
-            error_details = run_info.get("error") if run_info else "Unknown error"
+            error_details = run_info.get("error") if isinstance(run_info, dict) else "Unknown error"
             return {"success": False, "error": f"Failed to initiate: {error_details}. Check your Apify Token."}
             
     except Exception as e:

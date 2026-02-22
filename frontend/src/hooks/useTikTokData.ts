@@ -13,6 +13,7 @@ export const useTikTokData = () => {
 
     const [apiConnected, setApiConnected] = useState(false);
     const [sheetsConnected, setSheetsConnected] = useState(false);
+    const [supabaseConnected, setSupabaseConnected] = useState(false);
     const [credentialsFound, setCredentialsFound] = useState(false);
     const [sheetUrl, setSheetUrl] = useState('');
     const [apifyToken, setApifyToken] = useState('');
@@ -26,6 +27,8 @@ export const useTikTokData = () => {
             if (healthRes.ok) {
                 const healthData = await healthRes.json();
                 setCredentialsFound(healthData.credentials_found);
+                setSupabaseConnected(healthData.supabase_connected);
+                setApiConnected(true);
             }
 
             const response = await fetch('/api/settings');
@@ -300,7 +303,7 @@ export const useTikTokData = () => {
 
     return {
         videos, creators, sentiment, timeline, hashtags,
-        loading, scrapingProgress, apiConnected, sheetsConnected,
+        loading, scrapingProgress, apiConnected, sheetsConnected, supabaseConnected,
         sheetUrl, apifyToken, groups, activeGroupName, setActiveGroupName,
         fetchSettings, updateSettings, addGroup, deleteGroup,
         fetchData, runScrape, exportData, credentialsFound
