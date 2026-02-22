@@ -152,6 +152,8 @@ def health_check():
         "timestamp": datetime.now().isoformat(),
         "credentials_found": os.path.exists("credentials.json"),
         "supabase_connected": db.is_connected(),
+        "supabase_url_detected": bool(os.environ.get("SUPABASE_URL")),
+        "supabase_key_detected": bool(os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_KEY")),
         "environment": os.environ.get("RAILWAY_ENVIRONMENT", "vercel")
     }
 
