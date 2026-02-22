@@ -19,7 +19,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
     from scraper import scrape_hashtag_sync, scrape_user_sync, scrape_search_sync, TikTokScraper
     from analysis import TikTokAnalyzer
-    from sheets import SheetsManager
     from database import SupabaseManager
 except ImportError as e:
     print(f"Import Error: {e}")
@@ -29,9 +28,6 @@ except ImportError as e:
     class TikTokAnalyzer:
         def calculate_engagement_rate(self, df): return df
         def add_sentiment_analysis(self, df, **kwargs): return df
-    class SheetsManager:
-        def __init__(self, **kwargs): pass
-        def connect(self): return False
     class SupabaseManager:
         def __init__(self, **kwargs): pass
         def is_connected(self): return False
@@ -67,13 +63,8 @@ def save_local_data(data):
     pass
 
 def load_config():
-    config = {"sheet_url": "", "apify_token": "", "groups": []}
+    config = {"apify_token": "", "groups": []}
     
-    # Prioritize Environment Variables
-    env_sheet_url = os.environ.get("SHEET_URL")
-    if env_sheet_url:
-        config["sheet_url"] = env_sheet_url
-
     env_apify_token = os.environ.get("APIFY_TOKEN")
     if env_apify_token:
         config["apify_token"] = env_apify_token
@@ -96,7 +87,6 @@ def save_config(config):
     pass
 
 class SettingsRequest(BaseModel):
-    sheet_url: str
     apify_token: Optional[str] = None
 
 class KeywordGroup(BaseModel):
@@ -113,7 +103,6 @@ def get_settings():
 def update_settings(request: SettingsRequest):
     # This endpoint will only "pretend" to save in the runtime
     config = load_config()
-    config["sheet_url"] = request.sheet_url
     if request.apify_token is not None:
         config["apify_token"] = request.apify_token
     # save_config(config) # Disabled
@@ -140,7 +129,6 @@ class ScrapeRequest(BaseModel):
     video_count: Optional[int] = 50
     since_date: Optional[str] = None
     apify_token: str
-    sheet_url: Optional[str] = None
     scrape_comments: bool = False
     comments_limit: Optional[int] = 0
 
@@ -162,7 +150,6 @@ def health_check():
         "supabase_connected": db.is_connected(),
         "supabase_url_detected": bool(os.environ.get("SUPABASE_URL")),
         "supabase_key_detected": bool(os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_KEY")),
-        "credentials_found": os.path.exists("credentials.json"),
         "environment": os.environ.get("RAILWAY_ENVIRONMENT", "vercel")
     }
 
@@ -184,21 +171,6 @@ async def get_data():
                 print(f"[INFO] Loaded {len(videos)} videos from Supabase")
             if not df_comments.empty:
                 comments = df_comments.to_dict(orient='records')
-        
-        # Fallback to Sheets if Supabase is empty/not connected
-        if not videos:
-            sheet_url = config.get("sheet_url")
-            manager = SheetsManager(sheet_url=sheet_url if sheet_url else None)
-            
-            if manager.connect():
-                df_videos = manager.get_all_data()
-                df_comments = manager.get_all_comments()
-                
-                if not df_videos.empty:
-                    videos = df_videos.to_dict(orient='records')
-                
-                if not df_comments.empty:
-                    comments = df_comments.to_dict(orient='records')
 
         df_videos = pd.DataFrame(videos)
         df_comments = pd.DataFrame(comments)
@@ -216,8 +188,7 @@ async def get_data():
 
         return {
             "videos": df_videos.to_dict(orient='records') if not df_videos.empty else [],
-            "comments": df_comments.to_dict(orient='records') if not df_comments.empty else [],
-            "credentials_found": os.path.exists("credentials.json")
+            "comments": df_comments.to_dict(orient='records') if not df_comments.empty else []
         }
     except Exception as e:
         print(f"API Data Error: {e}")
@@ -273,13 +244,6 @@ async def run_scrape(request: ScrapeRequest):
                 v_count = db.save_videos(results)
                 c_count = db.save_comments(all_comments) if all_comments else 0
                 print(f"[INFO] Saved {v_count} videos and {c_count} comments to Supabase")
-
-            # Also try to save to Sheets as backup
-            manager = SheetsManager(sheet_url=request.sheet_url or config.get("sheet_url"))
-            if manager.connect():
-                manager.append_data(results)
-                if all_comments:
-                    manager.append_comments(all_comments)
             
             return {
                 "success": True, 
@@ -316,17 +280,7 @@ async def process_webhook_results(run_id: str, dataset_id: str, sheet_url: str =
                 c_count = db.save_comments(all_comments) if all_comments else 0
                 print(f"[INFO] Webhook saved {v_count} videos and {c_count} comments to Supabase.")
             else:
-                # 2. Backup to Sheets (ONLY if Supabase is offline)
-                target_sheet = sheet_url or config.get("sheet_url")
-                if target_sheet:
-                    print(f"[INFO] Supabase offline, attempting Sheets backup to {target_sheet}")
-                    manager = SheetsManager(sheet_url=target_sheet)
-                    if manager.connect():
-                        manager.append_data(results)
-                        if all_comments:
-                            manager.append_comments(all_comments)
-                else:
-                    print("[WARN] No storage available (Supabase offline and no Sheet URL).")
+                print("[WARN] No storage available (Supabase offline).")
         
         print(f"Async Scrape Finished for run {run_id}. Saved results to Sheets.")
     except Exception as e:
@@ -378,8 +332,7 @@ async def run_scrape_async(request: ScrapeRequest):
             request.search_input,
             request.video_count,
             comments_per_video=comments_limit,
-            webhook_url=webhook_url,
-            sheet_url=request.sheet_url or config.get("sheet_url")
+            webhook_url=webhook_url
         )
 
         # We need to ensure Apify sends back the commentsLimit if we want it preserved
@@ -389,7 +342,7 @@ async def run_scrape_async(request: ScrapeRequest):
         if run_info and (isinstance(run_info, dict) and "id" in run_info):
             return {
                 "success": True, 
-                "message": "Scrape initiated! Results will appear in Google Sheets in a few minutes.",
+                "message": "Scrape initiated! Results will appear on the dashboard in a few minutes.",
                 "run_id": run_info.get("id")
             }
         else:

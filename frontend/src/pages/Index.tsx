@@ -21,9 +21,9 @@ import { X } from 'lucide-react';
 const Index = () => {
   const {
     videos, sentiment, timeline, loading, scrapingProgress,
-    apiConnected, sheetsConnected, supabaseConnected, sheetUrl, apifyToken: savedToken, groups, activeGroupName,
+    apiConnected, supabaseConnected, apifyToken: savedToken, groups, activeGroupName,
     setActiveGroupName, fetchSettings, updateSettings, addGroup, deleteGroup,
-    fetchData, runScrape, exportData, credentialsFound
+    fetchData, runScrape, exportData
   } = useTikTokData();
 
   // Navigation & Filter State
@@ -42,7 +42,6 @@ const Index = () => {
   const [scrapeType, setScrapeType] = useState('Keyword');
 
   // Settings State
-  const [tempSheetUrl, setTempSheetUrl] = useState('');
   const [tempApifyToken, setTempApifyToken] = useState('');
   const [newGroupName, setNewGroupName] = useState('');
   const [newGroupKeywords, setNewGroupKeywords] = useState('');
@@ -61,13 +60,12 @@ const Index = () => {
 
   // Sync temp states when saved settings change
   useEffect(() => {
-    if (sheetUrl) setTempSheetUrl(sheetUrl);
     if (savedToken) {
       setTempApifyToken(savedToken);
       // Initialize scraper state only once or when saved token is updated from server
       setApifyToken(prev => prev || savedToken);
     }
-  }, [sheetUrl, savedToken]); // Removed apifyToken from dependency to stop typing-sync loop
+  }, [savedToken]); // Removed apifyToken from dependency to stop typing-sync loop
 
   const handleScrape = async () => {
     if (!searchInput) {
@@ -82,7 +80,7 @@ const Index = () => {
   };
 
   const handleUpdateSettings = async () => {
-    await updateSettings(tempSheetUrl, tempApifyToken);
+    await updateSettings(tempApifyToken);
   };
 
   const handleAddGroup = async () => {
@@ -153,9 +151,6 @@ const Index = () => {
             </span>
             <span className={cn("px-2 py-0.5 rounded-full border", supabaseConnected ? "bg-blue/10 text-blue border-blue/20" : "bg-muted/30 text-muted-foreground border-transparent")}>
               SUPABASE: {supabaseConnected ? "ACTIVE" : "OFFLINE"}
-            </span>
-            <span className={cn("px-2 py-0.5 rounded-full border", sheetsConnected ? "bg-green/10 text-green border-green/20" : "bg-orange/10 text-orange border-orange/20")}>
-              SHEETS: {sheetsConnected ? "CONNECTED" : "STANDBY"}
             </span>
           </div>
         </CardHeader>
@@ -396,36 +391,12 @@ const Index = () => {
           <p className="text-muted-foreground">Configure your data storage and API connections</p>
         </div>
 
-        {!credentialsFound && (
-          <Card className="border-destructive bg-destructive/10">
-            <CardHeader className="py-3">
-              <CardTitle className="text-sm text-destructive flex items-center gap-2">
-                <Info className="w-4 h-4" /> Google Sheets Setup Required
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="text-[10px] space-y-2">
-              <p>Your <strong>credentials.json</strong> file is missing from the server root.</p>
-              <p>1. Create a service account in Google Cloud Console.</p>
-              <p>2. Download the JSON key and rename it to <strong>credentials.json</strong>.</p>
-              <p>3. Place it in the <strong>Tiktok Bot</strong> folder.</p>
-            </CardContent>
-          </Card>
-        )}
-
         <Card className="border-border">
           <CardHeader>
-            <CardTitle>Google Sheets Connection</CardTitle>
-            <CardDescription>Paste your Google Sheet URL to persist the connection.</CardDescription>
+            <CardTitle>Apify Connection</CardTitle>
+            <CardDescription>Configure your Apify API Token for scraping.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label>Sheet URL</Label>
-              <Input
-                placeholder="https://docs.google.com/spreadsheets/d/..."
-                value={tempSheetUrl}
-                onChange={(e) => setTempSheetUrl(e.target.value)}
-              />
-            </div>
             <div className="space-y-2">
               <Label>Apify API Token</Label>
               <div className="relative">
@@ -446,7 +417,7 @@ const Index = () => {
               </div>
             </div>
             <Button onClick={handleUpdateSettings} className="w-full" disabled={loading}>
-              Save Connection
+              Update API Token
             </Button>
           </CardContent>
         </Card>
@@ -555,7 +526,7 @@ const Index = () => {
       <Sidebar currentView={currentView} onNavigate={setCurrentView} />
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        <Header apiConnected={apiConnected} sheetsConnected={sheetsConnected} />
+        <Header apiConnected={apiConnected} />
 
         <main className="flex-1 overflow-y-auto p-8 space-y-8">
           {/* Progress Bar for Scraping */}
@@ -564,7 +535,7 @@ const Index = () => {
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                  <span className="text-sm font-medium">Synchronizing with TikTok & Google Sheets...</span>
+                  <span className="text-sm font-medium">Synchronizing with TikTok & Supabase...</span>
                 </div>
                 <span className="text-sm text-muted-foreground">{Math.round(scrapingProgress)}%</span>
               </div>

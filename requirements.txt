@@ -3,11 +3,6 @@ pydantic
 pandas
 requests
 apify-client
-gspread
-oauth2client
-google-auth
-google-auth-oauthlib
-google-auth-httplib2
 vaderSentiment
 textblob
 plotly

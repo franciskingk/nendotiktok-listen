@@ -4,10 +4,9 @@ import { cn } from '@/lib/utils';
 
 interface HeaderProps {
   apiConnected?: boolean;
-  sheetsConnected?: boolean;
 }
 
-export const Header = ({ apiConnected = false, sheetsConnected = false }: HeaderProps) => {
+export const Header = ({ apiConnected = false }: HeaderProps) => {
   return (
     <header className="flex items-center justify-between px-8 py-4 border-b border-border bg-card/50 backdrop-blur-sm">
       {/* Title Placeholder */}
@@ -26,17 +25,6 @@ export const Header = ({ apiConnected = false, sheetsConnected = false }: Header
           )}
           <span className="text-sm text-muted-foreground">
             {apiConnected ? 'API Connected' : 'API Offline'}
-          </span>
-        </div>
-
-        {/* Sheets Status */}
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted">
-          <div className={cn(
-            "w-2 h-2 rounded-full",
-            sheetsConnected ? "bg-green animate-pulse" : "bg-destructive"
-          )} />
-          <span className="text-sm text-muted-foreground">
-            {sheetsConnected ? 'Sheets Synced' : 'Sheets Disconnected'}
           </span>
         </div>
 
