@@ -340,6 +340,7 @@ async def apify_webhook(request: Request, background_tasks: BackgroundTasks):
 async def run_scrape_async(request: ScrapeRequest):
     """Initiate a scrape job without waiting for it to finish (Vercel compatible)"""
     try:
+        config = load_config()
         # Detect host for webhook URL
         # VERCEL_URL is just the domain, we need to ensure it's a full URL
         host = os.environ.get("VERCEL_URL", os.environ.get("PUBLIC_URL", "localhost:8001"))

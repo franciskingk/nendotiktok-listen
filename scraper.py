@@ -150,7 +150,7 @@ class TikTokScraper:
         run_input = {
             "resultsPerPage": limit,
             "shouldDownloadVideos": False,
-            "commentsPerVideo": comments_per_video
+            "commentsPerPost": comments_per_video
         }
         
         if scrape_type == "Hashtag":
@@ -205,7 +205,7 @@ class TikTokScraper:
             "hashtags": hashtags,
             "resultsPerPage": limit,
             "shouldDownloadVideos": False,
-            "commentsPerVideo": comments_per_video
+            "commentsPerPost": comments_per_video
         }
         return await self._run_actor(run_input, limit, since_date, comments_per_video)
 
@@ -218,7 +218,7 @@ class TikTokScraper:
             "profiles": usernames,
             "resultsPerPage": limit,
             "shouldDownloadVideos": False,
-            "commentsPerVideo": comments_per_video
+            "commentsPerPost": comments_per_video
         }
         return await self._run_actor(run_input, limit, since_date, comments_per_video)
 
@@ -231,7 +231,7 @@ class TikTokScraper:
             "searchQueries": queries,
             "resultsPerPage": limit,
             "shouldDownloadVideos": False,
-            "commentsPerVideo": comments_per_video
+            "commentsPerPost": comments_per_video
         }
         return await self._run_actor(run_input, limit, since_date, comments_per_video)
 
