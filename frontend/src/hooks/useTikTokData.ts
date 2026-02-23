@@ -13,7 +13,6 @@ export const useTikTokData = () => {
 
     const [apiConnected, setApiConnected] = useState(false);
     const [supabaseConnected, setSupabaseConnected] = useState(false);
-    const [sheetUrl, setSheetUrl] = useState('');
     const [apifyToken, setApifyToken] = useState('');
     const [groups, setGroups] = useState<{ name: string, keywords: string[], exclude_keywords?: string[], exact_match?: boolean }[]>([]);
     const [activeGroupName, setActiveGroupName] = useState<string>('All Data');
@@ -39,24 +38,22 @@ export const useTikTokData = () => {
         }
     }, []);
 
-    const updateSettings = async (url: string, token?: string) => {
+    const updateSettings = async (token: string) => {
         try {
-            console.log("Saving settings...", { url, token });
+            console.log("Saving token...");
             const response = await fetch('/api/settings', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sheet_url: url, apify_token: token || apifyToken })
+                body: JSON.stringify({ apify_token: token })
             });
             if (response.ok) {
                 const data = await response.json();
-                console.log("Settings saved:", data);
-                setSheetUrl(url);
-                if (token) setApifyToken(token);
-                toast.success("Settings updated successfully");
+                setApifyToken(token);
+                toast.success("API Token updated");
                 await fetchData();
             } else {
-                const errorData = await response.json().catch(() => ({ detail: "Unknown server error" }));
-                toast.error(`Failed to save: ${errorData.detail || "Server error"}`);
+                const errorData = await response.json().catch(() => ({ detail: "Unknown error" }));
+                toast.error(`Failed to save: ${errorData.detail}`);
             }
         } catch (error) {
             console.error("Save error:", error);
@@ -110,16 +107,10 @@ export const useTikTokData = () => {
             const data = await response.json();
 
             if (data.error) {
-                // Only show connection error if a URL is actually configured
-                if (sheetUrl) {
-                    toast.error(data.error);
-                }
-                setSheetsConnected(false);
+                toast.error(data.error);
                 setVideos([]);
                 return;
             }
-
-            setSheetsConnected(true);
 
             // Map API data to UI model
             let rawVideos: TikTokVideo[] = data.videos.map((v: any) => ({
@@ -205,7 +196,6 @@ export const useTikTokData = () => {
         } catch (error) {
             console.error(error);
             setApiConnected(false);
-            setSheetsConnected(false);
             // Suppress toast for initial offline state
             if (activeGroupName !== 'All Data' || groups.length > 0) {
                 toast.error("Failed to connect to backend");
@@ -213,7 +203,7 @@ export const useTikTokData = () => {
         } finally {
             setLoading(false);
         }
-    }, [activeGroupName, groupsKey, sheetUrl]);
+    }, [activeGroupName, groupsKey]);
 
     const runScrape = async (
         type: string,
@@ -241,7 +231,6 @@ export const useTikTokData = () => {
                     video_count: limit,
                     since_date: sinceDate,
                     apify_token: token,
-                    sheet_url: sheetUrl, // Pass sheet_url from current state
                     scrape_comments: scrapeComments,
                     comments_limit: commentsLimit
                 })

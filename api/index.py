@@ -12,11 +12,13 @@ from datetime import datetime
 import pandas as pd
 import asyncio
 
-# Add the parent directory to sys.path so we can import modules from the root
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-# Import existing modules
+# Import modules from the same directory
 try:
+    from .scraper import scrape_hashtag_sync, scrape_user_sync, scrape_search_sync, TikTokScraper
+    from .analysis import TikTokAnalyzer
+    from .database import SupabaseManager
+except (ImportError, ValueError):
+    # Fallback for local testing or when relative imports fail
     from scraper import scrape_hashtag_sync, scrape_user_sync, scrape_search_sync, TikTokScraper
     from analysis import TikTokAnalyzer
     from database import SupabaseManager
@@ -257,7 +259,7 @@ async def run_scrape(request: ScrapeRequest):
         print(f"Scrape Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-async def process_webhook_results(run_id: str, dataset_id: str, sheet_url: str = None, comments_limit: int = 0, apify_token: str = None):
+async def process_webhook_results(run_id: str, dataset_id: str, comments_limit: int = 0, apify_token: str = None):
     """Background task to fetch and save findings from Apify"""
     try:
         config = load_config()
@@ -298,7 +300,7 @@ async def apify_webhook(request: Request, background_tasks: BackgroundTasks):
         apify_token = data.get("apifyToken")
         
         if run_id and dataset_id:
-            background_tasks.add_task(process_webhook_results, run_id, dataset_id, sheet_url, comments_limit, apify_token)
+            background_tasks.add_task(process_webhook_results, run_id, dataset_id, comments_limit, apify_token)
             return {"status": "processing"}
         return {"status": "invalid payload"}
     except Exception as e:
